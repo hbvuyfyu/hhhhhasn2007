@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes, CommandHandler
 from src.config import ADMIN_IDS
 from src.database import queries as db
 from src.middlewares.auth import require_access
+from src.utils.navigation import nav_clear
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = _build_main_keyboard(uid)
 
+    # Clear navigation stack when reaching main menu
+    nav_clear(context)
+
     if update.message:
         await update.message.reply_text(text, reply_markup=kb, parse_mode="Markdown")
     elif update.callback_query:
@@ -83,6 +87,116 @@ async def clean_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ *تم التنظيف الشامل*\n\nالمنصة: Android\nاستخدم /start للبدء.",
         parse_mode="Markdown",
     )
+
+
+@require_access
+async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the persistent back button - navigate to previous screen."""
+    from src.utils.navigation import nav_pop, nav_peek
+    prev = nav_pop(context)
+    if not prev:
+        prev = "main_menu"
+
+    # Replay the callback_data as if user pressed that button
+    query = update.callback_query
+    if query:
+        await query.answer()
+    # Create a fake callback by dispatching the callback_data
+    # We'll handle it by directly calling the target handler
+    await _dispatch_back(update, context, prev)
+
+
+async def _dispatch_back(update: Update, context: ContextTypes.DEFAULT_TYPE, target: str):
+    """Dispatch back navigation to the appropriate handler."""
+    query = update.callback_query
+
+    if target == "main_menu":
+        await start(update, context)
+        return
+
+    # For sub-menus, we need to re-enter the appropriate menu
+    handler_map = {
+        "af_menu": _back_af_menu,
+        "adj_menu": _back_adj_menu,
+        "singular_menu": _back_singular_menu,
+        "jumper_farm": _back_farm_menu,
+        "proxy_settings": _back_proxy_menu,
+        "sub_menu": _back_sub_menu,
+        "select_platform": _back_platform_menu,
+        "admin_panel": _back_admin_panel,
+        "admin_games": _back_admin_games,
+        "admin_events": _back_admin_events,
+        "admin_payment": _back_admin_payment,
+        "admin_plans": _back_admin_plans,
+    }
+
+    handler = handler_map.get(target)
+    if handler:
+        await handler(update, context)
+    else:
+        # Fallback to main menu
+        await start(update, context)
+
+
+async def _back_af_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.af_handler import af_menu
+    await af_menu(update, context)
+
+
+async def _back_adj_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.adj_handler import adj_menu
+    await adj_menu(update, context)
+
+
+async def _back_singular_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.singular_handler import singular_menu
+    await singular_menu(update, context)
+
+
+async def _back_farm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.farm_handler import jumper_farm_menu
+    await jumper_farm_menu(update, context)
+
+
+async def _back_proxy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.proxy_handler import proxy_settings
+    await proxy_settings(update, context)
+
+
+async def _back_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Re-enter subscription conversation
+    from src.handlers.subscription_handler import sub_menu
+    await sub_menu(update, context)
+
+
+async def _back_platform_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.platform_handler import select_platform
+    await select_platform(update, context)
+
+
+async def _back_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.admin_handler import admin_panel
+    await admin_panel(update, context)
+
+
+async def _back_admin_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.admin_handler import admin_games
+    await admin_games(update, context)
+
+
+async def _back_admin_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.admin_handler import admin_events
+    await admin_events(update, context)
+
+
+async def _back_admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.admin_handler import admin_payment
+    await admin_payment(update, context)
+
+
+async def _back_admin_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.admin_handler import admin_plans
+    await admin_plans(update, context)
 
 
 def get_handlers():

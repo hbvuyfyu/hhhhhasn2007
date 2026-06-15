@@ -7,6 +7,7 @@ from telegram.ext import (
 from src.config import ADMIN_IDS
 from src.database import queries as db
 from src.middlewares.auth import require_access
+from src.utils.navigation import nav_push, nav_clear
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ def _admin_required(func):
 
 
 def _back_kb(data: str = "admin_panel") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=data)]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 رجوع", callback_data="go_back"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")]
+    ])
 
 
 # ==================== Admin panel ====================
@@ -51,6 +54,7 @@ def _back_kb(data: str = "admin_panel") -> InlineKeyboardMarkup:
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    nav_push(context, "main_menu")
     kb = [
         [InlineKeyboardButton("👥 المستخدمون", callback_data="admin_users")],
         [InlineKeyboardButton("➕ إضافة مستخدم", callback_data="admin_add_user")],
@@ -157,7 +161,7 @@ async def admin_add_user_process(update: Update, context: ContextTypes.DEFAULT_T
             pass
 
     await update.message.reply_text("العودة:", reply_markup=_back_kb())
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Remove user ====================
@@ -185,7 +189,7 @@ async def admin_remove_user_process(update: Update, context: ContextTypes.DEFAUL
     except Exception:
         pass
     await update.message.reply_text("العودة:", reply_markup=_back_kb())
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Ban / Unban ====================
@@ -213,7 +217,7 @@ async def admin_ban_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
     await update.message.reply_text("العودة:", reply_markup=_back_kb())
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -239,7 +243,7 @@ async def admin_unban_process(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception:
         pass
     await update.message.reply_text("العودة:", reply_markup=_back_kb())
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Broadcast ====================
@@ -275,7 +279,7 @@ async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown",
         reply_markup=_back_kb(),
     )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Game management ====================
@@ -284,6 +288,7 @@ async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYP
 async def admin_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    nav_push(context, "admin_panel")
     kb = [
         [InlineKeyboardButton("➕ إضافة لعبة", callback_data="admin_add_game")],
         [InlineKeyboardButton("🗑️ حذف لعبة", callback_data="admin_delete_game")],
@@ -394,7 +399,7 @@ async def add_game_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ *خطأ:* `{e}`", parse_mode="Markdown")
 
     await update.message.reply_text("العودة:", reply_markup=_back_kb("admin_games"))
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Delete game ====================
@@ -451,7 +456,7 @@ async def del_game_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete_game_singular(game_id)
 
     await query.edit_message_text("✅ *تم حذف اللعبة وأحداثها*", parse_mode="Markdown", reply_markup=_back_kb("admin_games"))
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Event management ====================
@@ -460,6 +465,7 @@ async def del_game_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    nav_push(context, "admin_panel")
     kb = [
         [InlineKeyboardButton("➕ إضافة حدث", callback_data="admin_add_event")],
         [InlineKeyboardButton("🗑️ حذف حدث", callback_data="admin_delete_event")],
@@ -529,14 +535,14 @@ async def add_event_display(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔑 *أدخل Event Token*", parse_mode="Markdown")
         return ADD_EVENT_TOKEN
     await _save_event(update, context)
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
 async def add_event_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["add_event_token"] = update.message.text.strip()
     await _save_event(update, context)
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 async def _save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -615,7 +621,7 @@ async def del_event_game_select(update: Update, context: ContextTypes.DEFAULT_TY
 
     if not events:
         await query.edit_message_text("❌ *لا توجد أحداث*", parse_mode="Markdown", reply_markup=_back_kb("admin_events"))
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     kb = [[InlineKeyboardButton(ev["display_name"], callback_data=f"del_event_confirm_{ev['id']}")] for ev in events]
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_delete_event")])
@@ -638,7 +644,7 @@ async def del_event_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete_event_singular(event_id)
 
     await query.edit_message_text("✅ *تم حذف الحدث*", parse_mode="Markdown", reply_markup=_back_kb("admin_events"))
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 # ==================== Payment Settings Management ====================
@@ -647,6 +653,7 @@ async def del_event_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    nav_push(context, "admin_panel")
     settings = db.get_all_payment_settings()
 
     if not settings:
@@ -677,7 +684,7 @@ async def payment_edit_select(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not setting:
         await query.edit_message_text("❌ طريقة الدفع غير موجودة", reply_markup=_back_kb("admin_payment"))
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     is_active = setting.get("is_active")
     if isinstance(is_active, str):
@@ -721,7 +728,7 @@ async def payment_set_address(update: Update, context: ContextTypes.DEFAULT_TYPE
     method = context.user_data.get("payment_method", "")
     if not method:
         await update.message.reply_text("❌ *خطأ: لم يتم تحديد طريقة الدفع*", parse_mode="Markdown")
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     address = update.message.text.strip()
     db.update_payment_setting_field(method, "address", address)
@@ -733,7 +740,7 @@ async def payment_set_address(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"payment_edit_{method}")]
         ])
     )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -751,7 +758,7 @@ async def payment_set_instructions(update: Update, context: ContextTypes.DEFAULT
     method = context.user_data.get("payment_method", "")
     if not method:
         await update.message.reply_text("❌ *خطأ: لم يتم تحديد طريقة الدفع*", parse_mode="Markdown")
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     instructions = update.message.text.strip()
     db.update_payment_setting_field(method, "instructions", instructions)
@@ -763,7 +770,7 @@ async def payment_set_instructions(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"payment_edit_{method}")]
         ])
     )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -781,7 +788,7 @@ async def payment_set_apikey(update: Update, context: ContextTypes.DEFAULT_TYPE)
     method = context.user_data.get("payment_method", "")
     if not method:
         await update.message.reply_text("❌ *خطأ: لم يتم تحديد طريقة الدفع*", parse_mode="Markdown")
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     api_key = update.message.text.strip()
     db.update_payment_setting_field(method, "binance_api_key", api_key)
@@ -793,7 +800,7 @@ async def payment_set_apikey(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"payment_edit_{method}")]
         ])
     )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -811,7 +818,7 @@ async def payment_set_apisecret(update: Update, context: ContextTypes.DEFAULT_TY
     method = context.user_data.get("payment_method", "")
     if not method:
         await update.message.reply_text("❌ *خطأ: لم يتم تحديد طريقة الدفع*", parse_mode="Markdown")
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     api_secret = update.message.text.strip()
     db.update_payment_setting_field(method, "binance_api_secret", api_secret)
@@ -823,7 +830,7 @@ async def payment_set_apisecret(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"payment_edit_{method}")]
         ])
     )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -851,6 +858,7 @@ async def payment_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    nav_push(context, "admin_panel")
     plans = db.get_all_plans()
 
     txt = "📦 *إدارة الباقات*\n\n"
@@ -928,7 +936,7 @@ async def plan_add_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ *خطأ:* `{e}`", parse_mode="Markdown", reply_markup=_back_kb("admin_plans"))
 
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -940,7 +948,7 @@ async def plan_edit_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not plan:
         await query.edit_message_text("❌ الباقة غير موجودة", reply_markup=_back_kb("admin_plans"))
-        return ConversationHandler.END
+        return ADMIN_NAV
 
     context.user_data["plan_id"] = plan_id
 
@@ -992,7 +1000,7 @@ async def plan_set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔙 رجوع للباقة", callback_data=f"plan_edit_{plan_id}")]
             ])
         )
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -1023,7 +1031,7 @@ async def plan_set_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ *أدخل رقماً صحيحاً*", parse_mode="Markdown")
         return PLAN_EDIT_DURATION
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -1054,7 +1062,7 @@ async def plan_set_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ *أدخل رقماً صحيحاً*", parse_mode="Markdown")
         return PLAN_EDIT_PRICE
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -1085,7 +1093,7 @@ async def plan_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("❌ *أدخل رقماً صحيحاً*", parse_mode="Markdown")
         return PLAN_EDIT_LIMIT
-    return ConversationHandler.END
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -1116,10 +1124,87 @@ async def plan_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== Conversation Handler ====================
 
+# Navigation states - callback-only screens that don't require text input
+ADMIN_NAV = range(633, 634)
+
+
+async def _admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Route admin callback queries that don't require text input."""
+    query = update.callback_query
+    data = query.data
+
+    # Map of callback patterns to handler functions
+    if data == "admin_stats":
+        return await admin_stats(update, context)
+    elif data == "admin_users":
+        return await admin_users(update, context)
+    elif data == "admin_allowed_list":
+        return await admin_allowed_list(update, context)
+    elif data == "admin_banned_list":
+        return await admin_banned_list(update, context)
+    elif data == "admin_add_user":
+        return await admin_add_user_prompt(update, context)
+    elif data == "admin_remove_user":
+        return await admin_remove_user_prompt(update, context)
+    elif data == "admin_ban":
+        return await admin_ban_prompt(update, context)
+    elif data == "admin_unban":
+        return await admin_unban_prompt(update, context)
+    elif data == "admin_broadcast":
+        return await admin_broadcast_prompt(update, context)
+    elif data == "admin_games":
+        return await admin_games(update, context)
+    elif data == "admin_add_game":
+        return await admin_add_game_type(update, context)
+    elif data == "admin_delete_game":
+        return await admin_delete_game(update, context)
+    elif data == "admin_events":
+        return await admin_events(update, context)
+    elif data == "admin_add_event":
+        return await admin_add_event_type(update, context)
+    elif data == "admin_delete_event":
+        return await admin_delete_event(update, context)
+    elif data == "admin_payment":
+        return await admin_payment(update, context)
+    elif data.startswith("payment_edit_"):
+        return await payment_edit_select(update, context)
+    elif data.startswith("payment_set_address_"):
+        return await payment_set_address_prompt(update, context)
+    elif data.startswith("payment_set_instructions_"):
+        return await payment_set_instructions_prompt(update, context)
+    elif data.startswith("payment_set_apikey_"):
+        return await payment_set_apikey_prompt(update, context)
+    elif data.startswith("payment_set_apisecret_"):
+        return await payment_set_apisecret_prompt(update, context)
+    elif data.startswith("payment_toggle_"):
+        return await payment_toggle(update, context)
+    elif data == "admin_plans":
+        return await admin_plans(update, context)
+    elif data == "plan_add":
+        return await plan_add_start(update, context)
+    elif data.startswith("plan_edit_"):
+        return await plan_edit_select(update, context)
+    elif data.startswith("plan_set_name_"):
+        return await plan_set_name_prompt(update, context)
+    elif data.startswith("plan_set_duration_"):
+        return await plan_set_duration_prompt(update, context)
+    elif data.startswith("plan_set_price_"):
+        return await plan_set_price_prompt(update, context)
+    elif data.startswith("plan_set_limit_"):
+        return await plan_set_limit_prompt(update, context)
+    elif data.startswith("plan_toggle_"):
+        return await plan_toggle(update, context)
+    elif data.startswith("plan_delete_"):
+        return await plan_delete(update, context)
+    return ConversationHandler.END
+
+
 def get_conversation_handler():
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_panel, pattern="^admin_panel$")],
         states={
+            # Navigation state - handles all callback-based navigation within admin
+            ADMIN_NAV: [CallbackQueryHandler(_admin_callback_router, pattern=r"^(admin_|payment_|plan_)")],
             ADMIN_ADD_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_user_process)],
             ADMIN_REMOVE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_remove_user_process)],
             ADMIN_BAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ban_process)],
@@ -1167,6 +1252,7 @@ def get_conversation_handler():
         fallbacks=[
             CallbackQueryHandler(admin_panel, pattern="^admin_panel$"),
             CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^main_menu$"),
+            CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^go_back$"),
         ],
         allow_reentry=True,
     )
@@ -1175,35 +1261,4 @@ def get_conversation_handler():
 def get_handlers():
     return [
         get_conversation_handler(),
-        CallbackQueryHandler(admin_stats, pattern="^admin_stats$"),
-        CallbackQueryHandler(admin_users, pattern="^admin_users$"),
-        CallbackQueryHandler(admin_allowed_list, pattern="^admin_allowed_list$"),
-        CallbackQueryHandler(admin_banned_list, pattern="^admin_banned_list$"),
-        CallbackQueryHandler(admin_add_user_prompt, pattern="^admin_add_user$"),
-        CallbackQueryHandler(admin_remove_user_prompt, pattern="^admin_remove_user$"),
-        CallbackQueryHandler(admin_ban_prompt, pattern="^admin_ban$"),
-        CallbackQueryHandler(admin_unban_prompt, pattern="^admin_unban$"),
-        CallbackQueryHandler(admin_broadcast_prompt, pattern="^admin_broadcast$"),
-        CallbackQueryHandler(admin_games, pattern="^admin_games$"),
-        CallbackQueryHandler(admin_add_game_type, pattern="^admin_add_game$"),
-        CallbackQueryHandler(admin_delete_game, pattern="^admin_delete_game$"),
-        CallbackQueryHandler(admin_events, pattern="^admin_events$"),
-        CallbackQueryHandler(admin_add_event_type, pattern="^admin_add_event$"),
-        CallbackQueryHandler(admin_delete_event, pattern="^admin_delete_event$"),
-        CallbackQueryHandler(admin_payment, pattern="^admin_payment$"),
-        CallbackQueryHandler(payment_edit_select, pattern=r"^payment_edit_"),
-        CallbackQueryHandler(payment_set_address_prompt, pattern=r"^payment_set_address_"),
-        CallbackQueryHandler(payment_set_instructions_prompt, pattern=r"^payment_set_instructions_"),
-        CallbackQueryHandler(payment_set_apikey_prompt, pattern=r"^payment_set_apikey_"),
-        CallbackQueryHandler(payment_set_apisecret_prompt, pattern=r"^payment_set_apisecret_"),
-        CallbackQueryHandler(payment_toggle, pattern=r"^payment_toggle_"),
-        CallbackQueryHandler(admin_plans, pattern="^admin_plans$"),
-        CallbackQueryHandler(plan_add_start, pattern="^plan_add$"),
-        CallbackQueryHandler(plan_edit_select, pattern=r"^plan_edit_\d+$"),
-        CallbackQueryHandler(plan_set_name_prompt, pattern=r"^plan_set_name_"),
-        CallbackQueryHandler(plan_set_duration_prompt, pattern=r"^plan_set_duration_"),
-        CallbackQueryHandler(plan_set_price_prompt, pattern=r"^plan_set_price_"),
-        CallbackQueryHandler(plan_set_limit_prompt, pattern=r"^plan_set_limit_"),
-        CallbackQueryHandler(plan_toggle, pattern=r"^plan_toggle_"),
-        CallbackQueryHandler(plan_delete, pattern=r"^plan_delete_"),
     ]

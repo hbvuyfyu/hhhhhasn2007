@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CallbackQueryHandler
 
 from src.config import BOT_TOKEN, DATABASE_URL
@@ -39,15 +39,22 @@ def main():
     logger.info("Starting bot...")
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Start handler
     for handler in start.get_handlers():
         app.add_handler(handler)
 
-    for handler in subscription_handler.get_handlers():
-        app.add_handler(handler)
+    # Back button handler - must be before other callback handlers
+    app.add_handler(CallbackQueryHandler(start.go_back, pattern="^go_back$"))
 
+    # Admin handler
     for handler in admin_handler.get_handlers():
         app.add_handler(handler)
 
+    # Subscription handler
+    for handler in subscription_handler.get_handlers():
+        app.add_handler(handler)
+
+    # Feature handlers
     for handler in af_handler.get_handlers():
         app.add_handler(handler)
 
@@ -66,7 +73,17 @@ def main():
     for handler in platform_handler.get_handlers():
         app.add_handler(handler)
 
+    # Main menu handler
     app.add_handler(CallbackQueryHandler(start.start, pattern="^main_menu$"))
+
+    # Set bot menu commands
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            BotCommand("start", "القائمة الرئيسية"),
+            BotCommand("clean", "تنظيف وإعادة تعيين"),
+        ])
+
+    app.post_init = post_init
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
@@ -74,26 +91,20 @@ def main():
 
 def _run_migrations():
     from src.database.connection import get_db
+    import psycopg2.extras
 
-    migrations = [
-        os.path.join(os.path.dirname(__file__), "sql", "schema.sql"),
-        os.path.join(os.path.dirname(__file__), "sql", "subscriptions.sql"),
-    ]
+    schema_path = os.path.join(os.path.dirname(__file__), "sql", "schema.sql")
+    if not os.path.exists(schema_path):
+        logger.warning("schema.sql not found, skipping migration.")
+        return
+
+    with open(schema_path, "r", encoding="utf-8") as f:
+        sql = f.read()
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            for path in migrations:
-                if not os.path.exists(path):
-                    logger.warning(f"Migration file not found: {path}")
-                    continue
-                with open(path, "r", encoding="utf-8") as f:
-                    sql = f.read()
-                try:
-                    cur.execute(sql)
-                    logger.info(f"Applied migration: {os.path.basename(path)}")
-                except Exception as e:
-                    logger.warning(f"Migration {os.path.basename(path)} warning: {e}")
-                    conn.rollback()
+            cur.execute(sql)
+    logger.info("Database schema applied successfully.")
 
 
 if __name__ == "__main__":

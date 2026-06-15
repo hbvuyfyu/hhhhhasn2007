@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CallbackQueryHandler
 
 from src.config import BOT_TOKEN, DATABASE_URL
@@ -43,6 +43,9 @@ def main():
     for handler in start.get_handlers():
         app.add_handler(handler)
 
+    # Back button handler - must be before other callback handlers
+    app.add_handler(CallbackQueryHandler(start.go_back, pattern="^go_back$"))
+
     # Admin handler
     for handler in admin_handler.get_handlers():
         app.add_handler(handler)
@@ -70,7 +73,17 @@ def main():
     for handler in platform_handler.get_handlers():
         app.add_handler(handler)
 
+    # Main menu handler
     app.add_handler(CallbackQueryHandler(start.start, pattern="^main_menu$"))
+
+    # Set bot menu commands
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            BotCommand("start", "القائمة الرئيسية"),
+            BotCommand("clean", "تنظيف وإعادة تعيين"),
+        ])
+
+    app.post_init = post_init
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)

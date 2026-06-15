@@ -8,6 +8,7 @@ from src.config import ADMIN_IDS
 from src.database import queries as db
 from src.services.binance import verify_usdt_deposit
 from src.middlewares.auth import allow_free_access
+from src.utils.navigation import nav_push, nav_clear
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +16,15 @@ SUB_SELECT_METHOD, SUB_USDT_TX, SUB_CASH_PROOF = range(700, 703)
 
 
 def _back_main() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 رجوع", callback_data="go_back"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")]
+    ])
 
 
 def _back_sub() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 رجوع", callback_data="go_back"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")]
+    ])
 
 
 @allow_free_access
@@ -27,6 +32,7 @@ async def sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    nav_push(context, "main_menu")
     uid = update.effective_user.id
     db.upsert_user(uid, update.effective_user.username or "", update.effective_user.full_name or "")
 
@@ -51,7 +57,7 @@ async def sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for p in plans:
         label = f"{p['name']} — {p['price']}$ | {p['daily_limit']} عملية/يوم | {p['duration_days']} يوم"
         kb.append([InlineKeyboardButton(label, callback_data=f"sub_plan_{p['id']}")])
-    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")])
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="go_back"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")])
 
     text = f"📦 *اختر الباقة المناسبة:*{sub_text}"
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -82,7 +88,7 @@ async def sub_select_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = []
     for m in methods:
         kb.append([InlineKeyboardButton(m["display_name"], callback_data=f"sub_method_{m['method']}")])
-    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu")])
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")])
 
     text = (
         f"💳 *اختر طريقة الدفع*\n\n"
@@ -173,7 +179,8 @@ async def sub_usdt_tx(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"❌ *فشل التحقق*\n\n{msg}\n\nتأكد من رقم العملية وأعد المحاولة أو تواصل مع الإدارة.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu")
+                InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"),
+                InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")
             ]]),
         )
 
@@ -208,7 +215,7 @@ async def sub_method_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{instr}\n\n"
         f"📷 بعد الإرسال، أرسل *صورة إثبات الدفع:*"
     )
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu")]])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")]])
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
     return SUB_CASH_PROOF
 

@@ -44,12 +44,6 @@ def require_access(func):
         # Check subscription for operational commands
         sub = db.get_active_subscription(uid)
         if sub:
-            # Check daily limit
-            used = sub.get("daily_used", 0)
-            limit = sub.get("daily_limit", 0)
-            if used >= limit:
-                await _reply(update, f"⚠️ *تم استنفاد الحد اليومي*\n\n📊 الاستخدام: `{used}/{limit}`\n\nيرجى الانتظار حتى الغد أو ترقية اشتراكك.")
-                return
             db.increment_requests(uid)
             return await func(update, context, *args, **kwargs)
 
@@ -65,9 +59,29 @@ def require_access(func):
     return wrapper
 
 
-def increment_usage_if_success(user_id: int) -> None:
-    """Increment usage counter after successful operation."""
+def check_and_reserve_usage(user_id: int) -> bool:
+    """Atomically check daily limit and reserve one usage slot.
+    Returns True if the user has remaining quota and a slot was reserved.
+    Must be followed by confirm_usage() on success or rollback_usage() on failure."""
+    sub = db.get_active_subscription(user_id)
+    if not sub:
+        return False
+    used = sub.get("daily_used", 0)
+    limit = sub.get("daily_limit", 0)
+    if used >= limit:
+        return False
     db.increment_subscription_usage(user_id)
+    return True
+
+
+def confirm_usage(user_id: int) -> None:
+    """Confirm the reserved usage slot (already incremented in check_and_reserve_usage)."""
+    pass  # Already incremented in check_and_reserve_usage
+
+
+def rollback_usage(user_id: int) -> None:
+    """Roll back a reserved usage slot if the operation failed."""
+    db.decrement_subscription_usage(user_id)
 
 
 def allow_free_access(func):

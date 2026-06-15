@@ -1,6 +1,7 @@
 import requests
 import logging
 import time
+import random
 from typing import Optional, Dict, Tuple
 
 logger = logging.getLogger(__name__)
@@ -11,12 +12,15 @@ ADJ_URL = "https://s2s.adjust.com/event"
 def _build_proxy(proxy: Optional[Dict]) -> Optional[Dict]:
     if not proxy:
         return None
-    host  = proxy.get("host", "")
-    port  = proxy.get("port", "")
+    host = proxy.get("host", "")
+    port = proxy.get("port", "")
     ptype = proxy.get("proxy_type", "http").lower()
-    user  = proxy.get("username", "")
+    user = proxy.get("username", "")
     password = proxy.get("password", "")
-    auth  = f"{user}:{password}@" if user and password else ""
+    if user and password:
+        auth = f"{user}:{password}@"
+    else:
+        auth = ""
     proxy_url = f"{ptype}://{auth}{host}:{port}"
     return {"http": proxy_url, "https": proxy_url}
 
@@ -31,7 +35,6 @@ def send_adj(
     idfv: str = None,
     level: int = None,
 ) -> Tuple[int, str]:
-
     if platform == "ios":
         advertising_id = idfa or gps_adid
         id_param = "idfa"
@@ -40,16 +43,21 @@ def send_adj(
         id_param = "gps_adid"
 
     params = {
-        "app_token":   app_token,
+        "app_token": app_token,
         "event_token": event_token,
-        id_param:      advertising_id,
-        "s2s":         "1",
-        "created_at":  int(time.time()),
+        id_param: advertising_id,
+        "environment": "production",
+        "created_at": str(int(time.time())),
+        "ip_address": f"{random.randint(1,254)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}",
     }
+
+    if idfv:
+        params["idfv"] = idfv
+    if level is not None:
+        params["level"] = str(level)
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept":     "application/json",
     }
 
     try:

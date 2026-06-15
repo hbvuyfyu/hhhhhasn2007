@@ -495,6 +495,17 @@ def increment_subscription_usage(user_id: int) -> None:
     )
 
 
+def decrement_subscription_usage(user_id: int) -> None:
+    execute(
+        """
+        UPDATE subscriptions
+        SET daily_used = GREATEST(daily_used - 1, 0)
+        WHERE user_id = %s AND status = 'active' AND end_date > NOW()
+        """,
+        (user_id,),
+    )
+
+
 def create_subscription(user_id: int, plan_id: int, plan_name: str,
                         duration_days: int, daily_limit: int) -> None:
     execute(
