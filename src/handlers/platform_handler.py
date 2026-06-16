@@ -3,14 +3,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler
 
 from src.database import queries as db
-from src.middlewares.auth import require_access
+from src.middlewares.auth import require_access, allow_free_access
 from src.utils.cache import cache_clear
 from src.utils.navigation import nav_push, nav_clear
 
 logger = logging.getLogger(__name__)
 
 
-@require_access
+@allow_free_access
 async def select_platform(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -28,7 +28,7 @@ async def select_platform(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-@require_access
+@allow_free_access
 async def set_platform_android(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -40,7 +40,7 @@ async def set_platform_android(update: Update, context: ContextTypes.DEFAULT_TYP
     await start(update, context)
 
 
-@require_access
+@allow_free_access
 async def set_platform_ios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()

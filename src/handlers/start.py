@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes, CommandHandler
 
 from src.config import ADMIN_IDS
 from src.database import queries as db
-from src.middlewares.auth import require_access
+from src.middlewares.auth import require_access, allow_free_access
 from src.utils.navigation import nav_clear
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def _build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(kb)
 
 
-@require_access
+@allow_free_access
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     platform = db.get_user_platform(uid)
@@ -79,7 +79,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
-@require_access
+@allow_free_access
 async def clean_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     db.set_user_platform(uid, "android")
@@ -89,7 +89,7 @@ async def clean_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-@require_access
+@allow_free_access
 async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the persistent back button - navigate to previous screen."""
     from src.utils.navigation import nav_pop, nav_peek
