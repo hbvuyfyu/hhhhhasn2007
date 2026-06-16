@@ -60,5 +60,4 @@ def get_handlers():
         CallbackQueryHandler(select_platform, pattern="^select_platform$"),
         CallbackQueryHandler(set_platform_android, pattern="^set_platform_android$"),
         CallbackQueryHandler(set_platform_ios, pattern="^set_platform_ios$"),
-        CallbackQueryHandler(select_platform, pattern="^main_menu$"),
     ]
