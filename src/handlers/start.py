@@ -32,6 +32,7 @@ def _build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
     kb.append([InlineKeyboardButton("📊 Adjust", callback_data="adj_menu")])
     kb.append([InlineKeyboardButton("🌟 Singular", callback_data="singular_menu")])
     kb.append([InlineKeyboardButton("🌾 مزرعة الجمبرة", callback_data="jumper_farm")])
+    kb.append([InlineKeyboardButton("🗓 جدولة عمليات", callback_data="sched_menu")])
     kb.append([InlineKeyboardButton("🔧 إعدادات البروكسي", callback_data="proxy_settings")])
     kb.append([InlineKeyboardButton(f"{platform_emoji} نظام التشغيل", callback_data="select_platform")])
     return InlineKeyboardMarkup(kb)
@@ -58,6 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "┃ 📊 Adjust\n"
         "┃ 🌟 Singular\n"
         "┃ 🌾 مزرعة الجمبرة\n"
+        "┃ 🗓 جدولة عمليات\n"
         "┃ 🔧 بروكسي\n\n"
         f"📱 النظام الحالي: {platform_name}"
         f"{sub_text}"
@@ -123,6 +125,7 @@ async def _dispatch_back(update: Update, context: ContextTypes.DEFAULT_TYPE, tar
         "proxy_settings": _back_proxy_menu,
         "sub_menu": _back_sub_menu,
         "select_platform": _back_platform_menu,
+        "sched_menu": _back_sched_menu,
         "admin_panel": _back_admin_panel,
         "admin_games": _back_admin_games,
         "admin_events": _back_admin_events,
@@ -156,6 +159,11 @@ async def _back_singular_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def _back_farm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from src.handlers.farm_handler import jumper_farm_menu
     await jumper_farm_menu(update, context)
+
+
+async def _back_sched_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.handlers.schedule_handler import sched_menu
+    await sched_menu(update, context)
 
 
 async def _back_proxy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):

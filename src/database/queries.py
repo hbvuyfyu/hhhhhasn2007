@@ -692,3 +692,97 @@ def get_all_payment_requests() -> List[Dict]:
         "SELECT * FROM payment_requests ORDER BY created_at DESC LIMIT 100",
         fetch="all",
     ) or []
+
+
+# ==================== Scheduled Groups ====================
+
+def create_scheduled_group(
+    user_id: int, platform: str, game_id: int, game_name: str,
+    gaid: str, af_uid: str, interval_minutes: int, events: List[Dict],
+) -> int:
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO scheduled_groups
+                    (user_id, platform, game_id, game_name, gaid, af_uid,
+                     interval_minutes, total_events, status, current_event_index)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active', 0)
+                RETURNING id
+                """,
+                (user_id, platform, game_id, game_name, gaid, af_uid,
+                 interval_minutes, len(events)),
+            )
+            row = cur.fetchone()
+            group_id = row["id"]
+
+            for idx, ev in enumerate(events):
+                cur.execute(
+                    """
+                    INSERT INTO scheduled_group_events
+                        (group_id, event_id, event_name, display_name,
+                         order_index, revenue, level_value, event_token)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        group_id,
+                        ev.get("id", 0),
+                        ev.get("event_name", ""),
+                        ev.get("display_name", ""),
+                        idx,
+                        ev.get("revenue"),
+                        ev.get("level_value"),
+                        ev.get("event_token", ""),
+                    ),
+                )
+    return group_id
+
+
+def get_active_scheduled_groups(user_id: int) -> List[Dict]:
+    return execute(
+        """
+        SELECT id, platform, game_id, game_name, gaid, af_uid,
+               interval_minutes, status, current_event_index, total_events, created_at
+        FROM scheduled_groups
+        WHERE user_id = %s AND status = 'active'
+        ORDER BY created_at DESC
+        """,
+        (user_id,),
+        fetch="all",
+    ) or []
+
+
+def get_scheduled_group_by_id(group_id: int) -> Optional[Dict]:
+    return execute(
+        "SELECT * FROM scheduled_groups WHERE id = %s",
+        (group_id,),
+        fetch="one",
+    )
+
+
+def get_scheduled_group_events(group_id: int) -> List[Dict]:
+    return execute(
+        """
+        SELECT id, event_id, event_name, display_name,
+               order_index, revenue, level_value, event_token
+        FROM scheduled_group_events
+        WHERE group_id = %s
+        ORDER BY order_index ASC
+        """,
+        (group_id,),
+        fetch="all",
+    ) or []
+
+
+def update_scheduled_group_index(group_id: int, index: int) -> None:
+    execute(
+        "UPDATE scheduled_groups SET current_event_index = %s WHERE id = %s",
+        (index, group_id),
+    )
+
+
+def complete_scheduled_group(group_id: int) -> None:
+    execute(
+        "UPDATE scheduled_groups SET status = 'completed' WHERE id = %s",
+        (group_id,),
+    )

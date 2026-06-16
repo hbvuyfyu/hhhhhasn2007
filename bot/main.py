@@ -12,7 +12,7 @@ from src.config import BOT_TOKEN, DATABASE_URL
 from src.database.connection import init_pool
 from src.handlers import start, platform_handler, af_handler, adj_handler
 from src.handlers import singular_handler, farm_handler, proxy_handler, admin_handler
-from src.handlers import subscription_handler
+from src.handlers import subscription_handler, schedule_handler
 
 logging.basicConfig(
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
@@ -65,6 +65,9 @@ def main():
         app.add_handler(handler)
 
     for handler in farm_handler.get_handlers():
+        app.add_handler(handler)
+
+    for handler in schedule_handler.get_handlers():
         app.add_handler(handler)
 
     for handler in proxy_handler.get_handlers():
