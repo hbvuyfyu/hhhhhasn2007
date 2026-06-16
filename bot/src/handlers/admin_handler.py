@@ -71,6 +71,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")],
     ]
     await query.edit_message_text("👑 *لوحة تحكم المدير*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -295,6 +296,7 @@ async def admin_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
     ]
     await query.edit_message_text("🎮 *إدارة الألعاب*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -472,6 +474,7 @@ async def admin_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
     ]
     await query.edit_message_text("🎯 *إدارة الأحداث*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -672,6 +675,7 @@ async def admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")])
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -711,6 +715,7 @@ async def payment_edit_select(update: Update, context: ContextTypes.DEFAULT_TYPE
                                     callback_data=f"payment_toggle_{method}")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_payment")])
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -871,6 +876,7 @@ async def admin_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb.append([InlineKeyboardButton("➕ إضافة باقة", callback_data="plan_add")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")])
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -974,6 +980,7 @@ async def plan_edit_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 رجوع", callback_data="admin_plans")],
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
 
 
 @_admin_required
@@ -1125,7 +1132,7 @@ async def plan_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== Conversation Handler ====================
 
 # Navigation states - callback-only screens that don't require text input
-ADMIN_NAV = range(633, 634)
+ADMIN_NAV = 633
 
 
 async def _admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
