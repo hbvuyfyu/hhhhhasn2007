@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
     PLAN_ADD_NAME, PLAN_ADD_DURATION, PLAN_ADD_PRICE, PLAN_ADD_LIMIT,
     PLAN_EDIT_NAME, PLAN_EDIT_DURATION, PLAN_EDIT_PRICE, PLAN_EDIT_LIMIT,
     CUSTOM_EVENT_TYPE, CUSTOM_EVENT_GAME,
-) = range(600, 636)
+) = range(600, 635)
 
 
 def _is_admin(uid: int) -> bool:
