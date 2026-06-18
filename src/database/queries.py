@@ -812,12 +812,17 @@ def get_channel_subscription(user_id: int) -> Optional[Dict]:
 # ==================== Custom Event Games ====================
 
 def is_custom_event_enabled(game_type: str, game_id: int) -> bool:
-    row = execute(
-        "SELECT enabled FROM custom_event_games WHERE game_type = %s AND game_id = %s",
-        (game_type, game_id),
-        fetch="one",
-    )
-    return bool(row and row.get("enabled"))
+    try:
+        row = execute(
+            "SELECT enabled FROM custom_event_games WHERE game_type = %s AND game_id = %s",
+            (game_type, game_id),
+            fetch="one",
+        )
+        if row is None:
+            return True
+        return bool(row.get("enabled"))
+    except Exception:
+        return True
 
 
 def set_custom_event_enabled(game_type: str, game_id: int, enabled: bool) -> None:
