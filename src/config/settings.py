@@ -13,6 +13,10 @@ ADMIN_IDS: List[int] = [
 
 SUPPORT_USER: str = os.environ.get("SUPPORT_USER", "@abodnft")
 
+# Channel subscription settings
+CHANNEL_ID: str = os.environ.get("CHANNEL_ID", "@NITRO_SMS_Channel")
+CHANNEL_LINK: str = os.environ.get("CHANNEL_LINK", "https://t.me/NITRO_SMS_Channel")
+
 SDK_VERSION: str = os.environ.get("SDK_VERSION", "6.15.0")
 MAX_WORKERS: int = int(os.environ.get("MAX_WORKERS", "50"))
 CACHE_TTL: int = int(os.environ.get("CACHE_TTL", "300"))

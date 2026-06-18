@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
     PAYMENT_EDIT_ADDRESS, PAYMENT_EDIT_INSTRUCTIONS, PAYMENT_EDIT_API_KEY, PAYMENT_EDIT_API_SECRET,
     PLAN_ADD_NAME, PLAN_ADD_DURATION, PLAN_ADD_PRICE, PLAN_ADD_LIMIT,
     PLAN_EDIT_NAME, PLAN_EDIT_DURATION, PLAN_EDIT_PRICE, PLAN_EDIT_LIMIT,
-) = range(600, 633)
+    CUSTOM_EVENT_TYPE, CUSTOM_EVENT_GAME,
+) = range(600, 636)
 
 
 def _is_admin(uid: int) -> bool:
@@ -66,6 +67,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📢 إذاعة", callback_data="admin_broadcast")],
         [InlineKeyboardButton("🎮 إدارة الألعاب", callback_data="admin_games")],
         [InlineKeyboardButton("🎯 إدارة الأحداث", callback_data="admin_events")],
+        [InlineKeyboardButton("🔧 حدث مخصص", callback_data="admin_custom_event")],
         [InlineKeyboardButton("💳 إعدادات الدفع", callback_data="admin_payment")],
         [InlineKeyboardButton("📦 إدارة الباقات", callback_data="admin_plans")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")],
@@ -1129,10 +1131,126 @@ async def plan_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("✅ *تم حذف الباقة*", parse_mode="Markdown", reply_markup=_back_kb("admin_plans"))
 
 
+# ==================== Custom Event Management ====================
+
+@_admin_required
+async def admin_custom_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show custom event management menu."""
+    query = update.callback_query
+    await query.answer()
+    nav_push(context, "admin_panel")
+    kb = [
+        [InlineKeyboardButton("📱 AppsFlyer", callback_data="custom_event_type_af")],
+        [InlineKeyboardButton("📊 Adjust", callback_data="custom_event_type_adj")],
+        [InlineKeyboardButton("🌟 Singular", callback_data="custom_event_type_singular")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
+    ]
+    await query.edit_message_text("🔧 *إدارة حدث مخصص*\n\nاختر المنصة:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
+
+
+@_admin_required
+async def custom_event_type_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Select game type for custom event management."""
+    query = update.callback_query
+    await query.answer()
+    game_type = query.data.replace("custom_event_type_", "")
+    context.user_data["custom_event_type"] = game_type
+
+    if game_type == "af":
+        games = db.get_all_games_af()
+        kb = [[InlineKeyboardButton(f"{g['emoji']} {g['display_name']}", callback_data=f"custom_event_game_af_{g['id']}")] for g in games]
+    elif game_type == "adj":
+        games = db.get_all_games_adj()
+        kb = [[InlineKeyboardButton(f"{g['emoji']} {g['display_name']}", callback_data=f"custom_event_game_adj_{g['id']}")] for g in games]
+    else:
+        games = db.get_all_games_singular()
+        kb = [[InlineKeyboardButton(f"{g['emoji']} {g['display_name']}", callback_data=f"custom_event_game_singular_{g['id']}")] for g in games]
+
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_custom_event")])
+    await query.edit_message_text("🎮 *اختر اللعبة:*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
+
+
+@_admin_required
+async def custom_event_game_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manage custom event for a specific game."""
+    query = update.callback_query
+    await query.answer()
+
+    # Parse game_type and game_id from callback data
+    parts = query.data.replace("custom_event_game_", "").split("_")
+    game_type = parts[0]
+    game_id = int(parts[1])
+
+    # Get game info
+    if game_type == "af":
+        game = db.get_game_af_by_id(game_id)
+    elif game_type == "adj":
+        game = db.get_game_adj_by_id(game_id)
+    else:
+        game = db.get_game_singular_by_id(game_id)
+
+    if not game:
+        await query.edit_message_text("❌ اللعبة غير موجودة", reply_markup=_back_kb("admin_custom_event"))
+        return ADMIN_NAV
+
+    # Check if custom event is enabled
+    is_enabled = db.is_custom_event_enabled(game_type, game_id)
+
+    txt = (
+        f"🔧 *حدث مخصص*\n\n"
+        f"🎮 اللعبة: {game['display_name']}\n"
+        f"📱 المنصة: {game_type.upper()}\n"
+        f"الحالة: {'✅ مفعلة' if is_enabled else '❌ معطلة'}"
+    )
+
+    kb = [
+        [InlineKeyboardButton("✅ تفعيل" if not is_enabled else "❌ تعطيل",
+                              callback_data=f"custom_event_toggle_{game_type}_{game_id}")],
+        [InlineKeyboardButton("🗑️ حذف الزر", callback_data=f"custom_event_delete_{game_type}_{game_id}")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_custom_event")],
+    ]
+    await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
+
+
+@_admin_required
+async def custom_event_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle custom event for a game."""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.replace("custom_event_toggle_", "").split("_")
+    game_type = parts[0]
+    game_id = int(parts[1])
+
+    is_enabled = db.is_custom_event_enabled(game_type, game_id)
+    db.set_custom_event_enabled(game_type, game_id, not is_enabled)
+
+    await query.answer(f"{'تم التفعيل' if not is_enabled else 'تم التعطيل'}", show_alert=True)
+    await custom_event_game_select(update, context)
+
+
+@_admin_required
+async def custom_event_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete custom event setting for a game."""
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.replace("custom_event_delete_", "").split("_")
+    game_type = parts[0]
+    game_id = int(parts[1])
+
+    db.delete_custom_event_game(game_type, game_id)
+    await query.edit_message_text("✅ *تم حذف زر الحدث المخصص*", parse_mode="Markdown", reply_markup=_back_kb("admin_custom_event"))
+    return ADMIN_NAV
+
+
 # ==================== Conversation Handler ====================
 
 # Navigation states - callback-only screens that don't require text input
-ADMIN_NAV = 633
+ADMIN_NAV = 636
 
 
 async def _admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1171,6 +1289,16 @@ async def _admin_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         return await admin_add_event_type(update, context)
     elif data == "admin_delete_event":
         return await admin_delete_event(update, context)
+    elif data == "admin_custom_event":
+        return await admin_custom_event(update, context)
+    elif data.startswith("custom_event_type_"):
+        return await custom_event_type_select(update, context)
+    elif data.startswith("custom_event_game_"):
+        return await custom_event_game_select(update, context)
+    elif data.startswith("custom_event_toggle_"):
+        return await custom_event_toggle(update, context)
+    elif data.startswith("custom_event_delete_"):
+        return await custom_event_delete(update, context)
     elif data == "admin_payment":
         return await admin_payment(update, context)
     elif data.startswith("payment_edit_"):
@@ -1211,7 +1339,7 @@ def get_conversation_handler():
         entry_points=[CallbackQueryHandler(admin_panel, pattern="^admin_panel$")],
         states={
             # Navigation state - handles all callback-based navigation within admin
-            ADMIN_NAV: [CallbackQueryHandler(_admin_callback_router, pattern=r"^(admin_|payment_|plan_)")],
+            ADMIN_NAV: [CallbackQueryHandler(_admin_callback_router, pattern=r"^(admin_|payment_|plan_|custom_event_)")],
             ADMIN_ADD_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_add_user_process)],
             ADMIN_REMOVE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_remove_user_process)],
             ADMIN_BAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ban_process)],

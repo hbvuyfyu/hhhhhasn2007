@@ -264,6 +264,24 @@ INSERT INTO games_af (name, display_name, package, dev_key, emoji) VALUES
 ('zombie_waves',      '🧟 Zombie Waves',         'com.ddup.zombiewaves.zw',               'wiQMRPvGaAYTG',                       '🧟')
 ON CONFLICT (name) DO NOTHING;
 
+-- ==================== Channel Subscription ====================
+
+CREATE TABLE IF NOT EXISTS channel_subscription (
+    user_id BIGINT PRIMARY KEY,
+    subscribed BOOLEAN NOT NULL DEFAULT FALSE,
+    checked_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ==================== Custom Event Games ====================
+
+CREATE TABLE IF NOT EXISTS custom_event_games (
+    id SERIAL PRIMARY KEY,
+    game_type TEXT NOT NULL,  -- 'af', 'adj', 'singular'
+    game_id INTEGER NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE (game_type, game_id)
+);
+
 -- Dice Dream events
 DO $$
 DECLARE gid INTEGER;

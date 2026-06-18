@@ -1,13 +1,68 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
-from src.config import ADMIN_IDS
+from src.config import ADMIN_IDS, CHANNEL_ID, CHANNEL_LINK
 from src.database import queries as db
 from src.middlewares.auth import require_access, allow_free_access
 from src.utils.navigation import nav_clear
 
 logger = logging.getLogger(__name__)
+
+
+async def check_channel_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check if user is subscribed to the required channel."""
+    try:
+        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.error(f"Error checking channel subscription: {e}")
+        return False
+
+
+@allow_free_access
+async def channel_subscribe_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show subscription prompt with buttons."""
+    uid = update.effective_user.id
+
+    # Check if already subscribed
+    is_subscribed = await check_channel_subscription(uid, context)
+    if is_subscribed:
+        db.set_channel_subscribed(uid, True)
+        await start(update, context)
+        return
+
+    text = (
+        "🔔 *اشترك بالقناة اولاً حتى تتمكن من المتابعة*\n\n"
+        f"📌 القناة: {CHANNEL_LINK}\n\n"
+        "👉 اضغط على زر الاشتراك ثم تحقق"
+    )
+    kb = [
+        [InlineKeyboardButton("📢 اشترك بالقناة", url=CHANNEL_LINK)],
+        [InlineKeyboardButton("✅ تحقق", callback_data="check_subscription")]
+    ]
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    elif update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+@allow_free_access
+async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verify user subscription to channel."""
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+
+    is_subscribed = await check_channel_subscription(uid, context)
+    if is_subscribed:
+        db.set_channel_subscribed(uid, True)
+        await query.answer("✅ تم التحقق بنجاح!", show_alert=True)
+        await start(update, context)
+    else:
+        await query.answer("❌ لم يتم الاشتراك بعد", show_alert=True)
 
 
 def _build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
@@ -41,6 +96,21 @@ def _build_main_keyboard(uid: int) -> InlineKeyboardMarkup:
 @allow_free_access
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+
+    # Skip channel check for admins
+    if uid not in ADMIN_IDS:
+        # Check channel subscription
+        sub_record = db.get_channel_subscription(uid)
+        if sub_record and sub_record.get("subscribed"):
+            # Already verified before
+            pass
+        else:
+            # Check if subscribed
+            is_subscribed = await check_channel_subscription(uid, context)
+            if not is_subscribed:
+                await channel_subscribe_prompt(update, context)
+                return
+
     platform = db.get_user_platform(uid)
     platform_name = "Android 🤖" if platform == "android" else "iOS 🍎"
 
@@ -211,4 +281,5 @@ def get_handlers():
     return [
         CommandHandler("start", start),
         CommandHandler("clean", clean_start),
+        CallbackQueryHandler(check_subscription_callback, pattern="^check_subscription$"),
     ]

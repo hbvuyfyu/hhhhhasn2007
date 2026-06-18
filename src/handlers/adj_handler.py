@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-ADJ_ADID, ADJ_IDFA, ADJ_IDFV = range(200, 203)
+ADJ_ADID, ADJ_IDFA, ADJ_IDFV, ADJ_CUSTOM_LEVEL = range(200, 204)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -121,9 +121,96 @@ async def _show_adj_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(ev["display_name"], callback_data=f"adj_send_{ev['id']}")]
         for ev in events
     ]
+    # Add custom event button if enabled for this game
+    if db.is_custom_event_enabled("adj", game_id):
+        kb.append([InlineKeyboardButton("🎯 حدث مخصص", callback_data="adj_custom_event")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="adj_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return ConversationHandler.END
+
+
+@require_access
+async def adj_custom_event_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompt user to enter custom level."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🎯 *حدد رقم اللفل*\n\n"
+        "📝 أدخل رقم اللفل المطلوب\n"
+        "مثال: `45` أو `100`",
+        parse_mode="Markdown",
+    )
+    return ADJ_CUSTOM_LEVEL
+
+
+@require_access
+async def adj_custom_level_entered(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process custom level and send event."""
+    try:
+        level = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ *أدخل رقماً صحيحاً*", parse_mode="Markdown")
+        return ADJ_CUSTOM_LEVEL
+
+    context.user_data["adj_custom_level"] = level
+    game_id = context.user_data.get("adj_game_id")
+    game = context.user_data.get("adj_game", {})
+    uid = update.effective_user.id
+
+    # Check and reserve usage slot before sending
+    from src.config import ADMIN_IDS
+    if uid not in ADMIN_IDS:
+        if not check_and_reserve_usage(uid):
+            sub = db.get_active_subscription(uid)
+            used = sub.get("daily_used", 0) if sub else 0
+            limit = sub.get("daily_limit", 0) if sub else 0
+            await update.message.reply_text(
+                f"⚠️ *تم استنفاد الحد اليومي*\n\n📊 الاستخدام: `{used}/{limit}`\n\nيرجى الانتظار حتى الغد أو ترقية اشتراكك.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📦 اشتراك", callback_data="sub_menu")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")]
+                ]),
+            )
+            return ConversationHandler.END
+
+    platform = db.get_user_platform(uid)
+    proxy_row = db.get_proxy_for_user(uid)
+
+    await update.message.reply_text("🔄 *جاري الإرسال...*", parse_mode="Markdown")
+
+    # Use a generic level event for custom level
+    status, resp = send_adj(
+        app_token=game.get("app_token", ""),
+        event_token=f"level_{level}",
+        gps_adid=context.user_data.get("adj_gps_adid", ""),
+        proxy=dict(proxy_row) if proxy_row else None,
+        platform=platform,
+        idfa=context.user_data.get("adj_idfa"),
+        idfv=context.user_data.get("adj_idfv"),
+        level=level,
+    )
+
+    result_text = _result_text(status, resp)
+
+    if status == 200:
+        confirm_usage(uid)
+        result_text += "\n\n📊 *تم احتساب العملية*"
+    else:
+        rollback_usage(uid)
+        result_text += "\n\n📊 *لم يتم احتساب العملية (فشل الإرسال)*"
+
+    kb = [
+        [InlineKeyboardButton("🎯 حدث آخر", callback_data=f"adj_game_{game.get('id')}")],
+        [InlineKeyboardButton("🔙 قائمة الألعاب", callback_data="adj_menu")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")],
+    ]
+    await update.message.reply_text(
+        f"{result_text}\n\n📝 *الحدث:* Level {level}\n🎮 *اللعبة:* {game.get('display_name', '')}",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown",
     )
@@ -219,6 +306,7 @@ def get_handlers():
             ADJ_ADID: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_adid)],
             ADJ_IDFA: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfa)],
             ADJ_IDFV: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfv)],
+            ADJ_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_level_entered)],
         },
         fallbacks=[CallbackQueryHandler(adj_menu, pattern="^adj_menu$")],
         allow_reentry=True,
@@ -226,4 +314,5 @@ def get_handlers():
     return [
         conv,
         CallbackQueryHandler(adj_send, pattern=r"^adj_send_\d+$"),
+        CallbackQueryHandler(adj_custom_event_prompt, pattern="^adj_custom_event$"),
     ]

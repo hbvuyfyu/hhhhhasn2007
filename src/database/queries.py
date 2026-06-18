@@ -786,3 +786,60 @@ def complete_scheduled_group(group_id: int) -> None:
         "UPDATE scheduled_groups SET status = 'completed' WHERE id = %s",
         (group_id,),
     )
+
+
+# ==================== Channel Subscription ====================
+
+def set_channel_subscribed(user_id: int, subscribed: bool) -> None:
+    execute(
+        """
+        INSERT INTO channel_subscription (user_id, subscribed, checked_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET subscribed = EXCLUDED.subscribed, checked_at = NOW()
+        """,
+        (user_id, subscribed),
+    )
+
+
+def get_channel_subscription(user_id: int) -> Optional[Dict]:
+    return execute(
+        "SELECT user_id, subscribed, checked_at FROM channel_subscription WHERE user_id = %s",
+        (user_id,),
+        fetch="one",
+    )
+
+
+# ==================== Custom Event Games ====================
+
+def is_custom_event_enabled(game_type: str, game_id: int) -> bool:
+    row = execute(
+        "SELECT enabled FROM custom_event_games WHERE game_type = %s AND game_id = %s",
+        (game_type, game_id),
+        fetch="one",
+    )
+    return bool(row and row.get("enabled"))
+
+
+def set_custom_event_enabled(game_type: str, game_id: int, enabled: bool) -> None:
+    execute(
+        """
+        INSERT INTO custom_event_games (game_type, game_id, enabled)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (game_type, game_id) DO UPDATE SET enabled = EXCLUDED.enabled
+        """,
+        (game_type, game_id, enabled),
+    )
+
+
+def delete_custom_event_game(game_type: str, game_id: int) -> None:
+    execute(
+        "DELETE FROM custom_event_games WHERE game_type = %s AND game_id = %s",
+        (game_type, game_id),
+    )
+
+
+def get_all_custom_event_games() -> List[Dict]:
+    return execute(
+        "SELECT id, game_type, game_id, enabled FROM custom_event_games ORDER BY id",
+        fetch="all",
+    ) or []
