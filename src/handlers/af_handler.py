@@ -333,6 +333,7 @@ def get_handlers():
         entry_points=[
             CallbackQueryHandler(af_menu, pattern="^af_menu$"),
             CallbackQueryHandler(af_game, pattern=r"^af_game_\d+$"),
+            CallbackQueryHandler(af_custom_event_prompt, pattern="^af_custom_event$"),
         ],
         states={
             AF_GAID:    [MessageHandler(filters.TEXT & ~filters.COMMAND, af_gaid)],
@@ -340,7 +341,10 @@ def get_handlers():
             AF_IDFV:    [MessageHandler(filters.TEXT & ~filters.COMMAND, af_idfv)],
             AF_UID:     [MessageHandler(filters.TEXT & ~filters.COMMAND, af_uid)],
             AF_UID_IOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_uid_ios)],
-            AF_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_custom_level_entered)],
+            AF_CUSTOM_LEVEL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, af_custom_level_entered),
+                CallbackQueryHandler(af_custom_event_prompt, pattern="^af_custom_event$"),
+            ],
         },
         fallbacks=[CallbackQueryHandler(af_menu, pattern="^af_menu$")],
         allow_reentry=True,
@@ -348,5 +352,4 @@ def get_handlers():
     return [
         conv,
         CallbackQueryHandler(af_send, pattern=r"^af_send_\d+$"),
-        CallbackQueryHandler(af_custom_event_prompt, pattern="^af_custom_event$"),
     ]
