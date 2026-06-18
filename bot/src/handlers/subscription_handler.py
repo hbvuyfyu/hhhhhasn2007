@@ -137,6 +137,18 @@ async def sub_usdt_tx(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plan = context.user_data.get("sub_plan", {})
     setting = context.user_data.get("sub_setting", {})
 
+    # Check if TXID was already used
+    if db.is_txid_used(tx_id):
+        await update.message.reply_text(
+            "❌ *فشل التحقق*\n\n⚠️ هذا الرقم العملية (TxID) تم استخدامه مسبقاً!\n\nيرجى استخدام عملية تحويل جديدة أو التواصل مع الإدارة.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"),
+                InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")
+            ]]),
+        )
+        return ConversationHandler.END
+
     await update.message.reply_text("⏳ *جاري التحقق من العملية...*", parse_mode="Markdown")
 
     api_key = setting.get("binance_api_key", "")

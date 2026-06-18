@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-ADJ_ADID, ADJ_IDFA, ADJ_IDFV = range(200, 203)
+ADJ_ADID, ADJ_IDFA, ADJ_IDFV, ADJ_CUSTOM_LEVEL, ADJ_CUSTOM_CONFIRM = range(200, 205)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -121,6 +121,7 @@ async def _show_adj_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(ev["display_name"], callback_data=f"adj_send_{ev['id']}")]
         for ev in events
     ]
+    kb.append([InlineKeyboardButton("🎯 لفل مخصص", callback_data="adj_custom_level")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="adj_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
@@ -209,6 +210,169 @@ async def adj_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@require_access
+async def adj_custom_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show events list for custom level selection."""
+    query = update.callback_query
+    await query.answer()
+    game_id = context.user_data.get("adj_game_id")
+    events = db.get_adj_events(game_id)
+    if not events:
+        await query.edit_message_text(
+            "❌ *لا توجد أحداث لهذه اللعبة*",
+            parse_mode="Markdown",
+            reply_markup=_back_kb("adj_menu"),
+        )
+        return ConversationHandler.END
+
+    kb = [
+        [InlineKeyboardButton(ev["display_name"], callback_data=f"adj_custom_evt_{ev['id']}")]
+        for ev in events
+    ]
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"adj_game_{game_id}")])
+    await query.edit_message_text(
+        "🎯 *اختر الحدث للفل المخصص*",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return ConversationHandler.END
+
+
+@require_access
+async def adj_custom_evt_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ask user for custom level value."""
+    query = update.callback_query
+    await query.answer()
+    event_id = int(query.data.replace("adj_custom_evt_", ""))
+    context.user_data["adj_custom_event_id"] = event_id
+    await query.edit_message_text(
+        "📊 *أدخل الفل المخصص:*\nمثال: `15` أو `20`",
+        parse_mode="Markdown",
+    )
+    return ADJ_CUSTOM_LEVEL
+
+
+@require_access
+async def adj_custom_level_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle custom level input and show confirmation."""
+    try:
+        level = int(update.message.text.strip())
+        if level < 1:
+            raise ValueError("Level must be positive")
+    except ValueError:
+        await update.message.reply_text(
+            "❌ *أدخل رقماً صحيحاً موجباً*",
+            parse_mode="Markdown",
+        )
+        return ADJ_CUSTOM_LEVEL
+
+    context.user_data["adj_custom_level"] = level
+    event_id = context.user_data.get("adj_custom_event_id")
+    game_id = context.user_data.get("adj_game_id")
+    events = db.get_adj_events(game_id)
+    event = next((e for e in events if e["id"] == event_id), None)
+    game = context.user_data.get("adj_game", {})
+
+    if not event:
+        await update.message.reply_text(
+            "❌ خطأ: الحدث غير موجود",
+            parse_mode="Markdown",
+            reply_markup=_back_kb("adj_menu"),
+        )
+        return ConversationHandler.END
+
+    kb = [
+        [InlineKeyboardButton("✅ تأكيد", callback_data="adj_custom_confirm")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data=f"adj_game_{game_id}")],
+    ]
+    await update.message.reply_text(
+        f"🎯 *تأكيد الفل المخصص*\n\n🎮 اللعبة: {game.get('display_name', '')}\n📝 الحدث: {event['display_name']}\n📊 الفل: `{level}`",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return ADJ_CUSTOM_CONFIRM
+
+
+@require_access
+async def adj_custom_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send event with custom level."""
+    query = update.callback_query
+    await query.answer()
+
+    event_id = context.user_data.get("adj_custom_event_id")
+    game_id = context.user_data.get("adj_game_id")
+    if not game_id:
+        await query.edit_message_text(
+            "❌ *انتهت الجلسة. ابدأ من جديد.*",
+            parse_mode="Markdown",
+            reply_markup=_back_kb("adj_menu"),
+        )
+        return
+
+    events = db.get_adj_events(game_id)
+    event = next((e for e in events if e["id"] == event_id), None)
+    if not event:
+        await query.edit_message_text("❌ خطأ: الحدث غير موجود", parse_mode="Markdown")
+        return
+
+    game = context.user_data.get("adj_game", {})
+    uid = update.effective_user.id
+    custom_level = context.user_data.get("adj_custom_level", 1)
+
+    # Check and reserve usage slot before sending
+    from src.config import ADMIN_IDS
+    if uid not in ADMIN_IDS:
+        if not check_and_reserve_usage(uid):
+            sub = db.get_active_subscription(uid)
+            used = sub.get("daily_used", 0) if sub else 0
+            limit = sub.get("daily_limit", 0) if sub else 0
+            await query.edit_message_text(
+                f"⚠️ *تم استنفاد الحد اليومي*\n\n📊 الاستخدام: `{used}/{limit}`\n\nيرجى الانتظار حتى الغد أو ترقية اشتراكك.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📦 اشتراك", callback_data="sub_menu")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")]
+                ]),
+            )
+            return
+
+    platform = db.get_user_platform(uid)
+    proxy_row = db.get_proxy_for_user(uid)
+
+    await query.edit_message_text("🔄 *جاري الإرسال...*", parse_mode="Markdown")
+
+    status, resp = send_adj(
+        app_token=game.get("app_token", ""),
+        event_token=event.get("event_token", ""),
+        gps_adid=context.user_data.get("adj_gps_adid", ""),
+        proxy=dict(proxy_row) if proxy_row else None,
+        platform=platform,
+        idfa=context.user_data.get("adj_idfa"),
+        idfv=context.user_data.get("adj_idfv"),
+        level=custom_level,
+    )
+
+    result_text = _result_text(status, resp)
+
+    if status == 200:
+        confirm_usage(uid)
+        result_text += "\n\n📊 *تم احتساب العملية*"
+    else:
+        rollback_usage(uid)
+        result_text += "\n\n📊 *لم يتم احتساب العملية (فشل الإرسال)*"
+
+    kb = [
+        [InlineKeyboardButton("🎯 حدث آخر", callback_data=f"adj_game_{game.get('id')}")],
+        [InlineKeyboardButton("🔙 قائمة الألعاب", callback_data="adj_menu")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")],
+    ]
+    await query.edit_message_text(
+        f"{result_text}\n\n📝 *الحدث:* {event['display_name']}\n📊 *الفل المخصص:* {custom_level}\n🎮 *اللعبة:* {game.get('display_name', '')}",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
 def get_handlers():
     conv = ConversationHandler(
         entry_points=[
@@ -219,6 +383,7 @@ def get_handlers():
             ADJ_ADID: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_adid)],
             ADJ_IDFA: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfa)],
             ADJ_IDFV: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfv)],
+            ADJ_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_level_input)],
         },
         fallbacks=[CallbackQueryHandler(adj_menu, pattern="^adj_menu$")],
         allow_reentry=True,
@@ -226,4 +391,7 @@ def get_handlers():
     return [
         conv,
         CallbackQueryHandler(adj_send, pattern=r"^adj_send_\d+$"),
+        CallbackQueryHandler(adj_custom_level, pattern="^adj_custom_level$"),
+        CallbackQueryHandler(adj_custom_evt_select, pattern=r"^adj_custom_evt_\d+$"),
+        CallbackQueryHandler(adj_custom_send, pattern="^adj_custom_confirm$"),
     ]

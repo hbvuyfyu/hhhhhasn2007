@@ -694,6 +694,18 @@ def get_all_payment_requests() -> List[Dict]:
     ) or []
 
 
+def is_txid_used(transaction_id: str) -> bool:
+    """Check if a USDT transaction ID has already been used."""
+    if not transaction_id:
+        return False
+    row = execute(
+        "SELECT id FROM payment_requests WHERE transaction_id = %s AND method = 'usdt'",
+        (transaction_id,),
+        fetch="one",
+    )
+    return row is not None
+
+
 # ==================== Scheduled Groups ====================
 
 def create_scheduled_group(
