@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 (
     SCH_PLATFORM, SCH_GAME, SCH_EVENTS,
     SCH_INTERVAL, SCH_GAID, SCH_AF_UID, SCH_CONFIRM,
-) = range(600, 607)
+    SCH_CUSTOM_LEVEL,
+) = range(600, 608)
 
 _INTERVAL_LABELS = {15: "15 دقيقة", 25: "25 دقيقة", 60: "ساعة واحدة", 120: "ساعتان"}
 _PLAT_LABELS = {"af": "📱 AppsFlyer", "adj": "📊 Adjust", "sg": "🌟 Singular"}
@@ -140,6 +141,9 @@ async def sched_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return SCH_EVENTS
 
 
+_PLAT_TYPE_MAP = {"af": "af", "adj": "adj", "sg": "singular"}
+
+
 async def _show_event_selection(query, context: ContextTypes.DEFAULT_TYPE):
     sched = context.user_data["sched"]
     events_pool = sched["events_pool"]
@@ -151,6 +155,13 @@ async def _show_event_selection(query, context: ContextTypes.DEFAULT_TYPE):
         num = selected_ids.get(ev["id"])
         label = f"✅ {num}. {ev['display_name']}" if num else f"⬜ {ev['display_name']}"
         kb.append([InlineKeyboardButton(label, callback_data=f"sched_ev_{ev['id']}")])
+
+    # Add custom event button if enabled for this game
+    plat = sched.get("platform", "af")
+    game_type = _PLAT_TYPE_MAP.get(plat, plat)
+    game_id = sched.get("game_id")
+    if game_id and db.is_custom_event_enabled(game_type, game_id):
+        kb.append([InlineKeyboardButton("🎯 إضافة لفل مخصص", callback_data="sched_custom_ev")])
 
     if selected:
         kb.append([InlineKeyboardButton("💾 حفظ الترتيب والمتابعة ◀", callback_data="sched_save_events")])
@@ -508,6 +519,99 @@ async def run_scheduled_group(group_id: int, chat_id: int, context: ContextTypes
         pass
 
 
+@require_access
+async def sched_custom_event_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ask user to enter a custom level number for the scheduled group."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🎯 *إضافة لفل مخصص*\n\n"
+        "📝 أدخل رقم اللفل المطلوب:\n"
+        "مثال: `45` أو `100`",
+        parse_mode="Markdown",
+    )
+    return SCH_CUSTOM_LEVEL
+
+
+@require_access
+async def sched_custom_level_entered(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the custom level number entered by the user and add it to the event pool."""
+    try:
+        level = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("❌ *أدخل رقماً صحيحاً فقط*", parse_mode="Markdown")
+        return SCH_CUSTOM_LEVEL
+
+    if level < 1:
+        await update.message.reply_text("❌ *يجب أن يكون رقم اللفل أكبر من 0*", parse_mode="Markdown")
+        return SCH_CUSTOM_LEVEL
+
+    sched = context.user_data.get("sched", {})
+    plat = sched.get("platform", "af")
+
+    # Build platform-specific event data (same approach as standalone custom handlers)
+    if plat == "af":
+        event_name = f"af_level_{level}_completed"
+        event_token = ""
+    elif plat == "adj":
+        event_name = f"level_{level}"
+        event_token = f"level_{level}"
+    else:  # sg (Singular)
+        event_name = "sng_level_achieved"
+        event_token = ""
+
+    # Generate a unique positive ID that won't clash with real DB event IDs
+    custom_count = sched.get("custom_count", 0) + 1
+    context.user_data["sched"]["custom_count"] = custom_count
+    custom_id = 90000 + custom_count * 100 + (level % 100)
+
+    custom_event = {
+        "id": custom_id,
+        "display_name": f"🎯 لفل مخصص ({level})",
+        "event_name": event_name,
+        "event_token": event_token,
+        "level_value": level,
+        "revenue": None,
+        "is_custom": True,
+    }
+
+    # Add to both pool (so user can toggle it off later) and selected
+    context.user_data["sched"].setdefault("events_pool", []).append(custom_event)
+    context.user_data["sched"].setdefault("selected_events", []).append(custom_event)
+
+    # Re-build the event selection keyboard and show it as a new message
+    sched = context.user_data["sched"]
+    events_pool = sched["events_pool"]
+    selected = sched["selected_events"]
+    selected_ids = {e["id"]: idx + 1 for idx, e in enumerate(selected)}
+
+    kb = []
+    for ev in events_pool:
+        num = selected_ids.get(ev["id"])
+        label = f"✅ {num}. {ev['display_name']}" if num else f"⬜ {ev['display_name']}"
+        kb.append([InlineKeyboardButton(label, callback_data=f"sched_ev_{ev['id']}")])
+
+    game_type = _PLAT_TYPE_MAP.get(plat, plat)
+    game_id = sched.get("game_id")
+    if game_id and db.is_custom_event_enabled(game_type, game_id):
+        kb.append([InlineKeyboardButton("🎯 إضافة لفل مخصص", callback_data="sched_custom_ev")])
+
+    kb.append([InlineKeyboardButton("💾 حفظ الترتيب والمتابعة ◀", callback_data="sched_save_events")])
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="sched_new")])
+
+    selected_lines = "\n".join(f"  {i+1}. {e['display_name']}" for i, e in enumerate(selected))
+
+    await update.message.reply_text(
+        f"✅ *تمت إضافة لفل مخصص ({level})*\n\n"
+        f"🗓 *اختر الأحداث بالترتيب*\n🎮 {sched['game_name']}\n\n"
+        f"اضغط على الحدث لإضافته — اضغط مجدداً لإلغائه\n\n"
+        f"*الأحداث المختارة:*\n{selected_lines}",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return SCH_EVENTS
+
+
 def get_handlers():
     conv = ConversationHandler(
         entry_points=[
@@ -525,6 +629,7 @@ def get_handlers():
                 CallbackQueryHandler(sched_toggle_event, pattern=r"^sched_ev_\d+$"),
                 CallbackQueryHandler(sched_save_events, pattern="^sched_save_events$"),
                 CallbackQueryHandler(sched_back_to_events, pattern="^sched_back_to_events$"),
+                CallbackQueryHandler(sched_custom_event_prompt, pattern="^sched_custom_ev$"),
             ],
             SCH_INTERVAL: [
                 CallbackQueryHandler(sched_interval, pattern=r"^sched_int_(15|25|60|120)$"),
@@ -537,6 +642,10 @@ def get_handlers():
             ],
             SCH_CONFIRM: [
                 CallbackQueryHandler(sched_confirm, pattern="^sched_confirm$"),
+            ],
+            SCH_CUSTOM_LEVEL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, sched_custom_level_entered),
+                CallbackQueryHandler(sched_custom_event_prompt, pattern="^sched_custom_ev$"),
             ],
         },
         fallbacks=[
