@@ -379,7 +379,7 @@ def get_handlers():
             SUB_SELECT_METHOD: [
                 CallbackQueryHandler(sub_select_plan, pattern=r"^sub_plan_\d+$"),
                 CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
-                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(?!usdt$).+"),
+                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_[a-z_]+$"),
             ],
             SUB_USDT_TX: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, sub_usdt_tx),
