@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-SNG_AIFA, SNG_IDFA, SNG_IDFV, SNG_UID, SNG_UID_IOS, SNG_CUSTOM_LEVEL, SNG_CUSTOM_CONFIRM = range(300, 307)
+SNG_AIFA, SNG_IDFA, SNG_IDFV, SNG_UID, SNG_UID_IOS, SNG_CUSTOM_LEVEL, SNG_CUSTOM_CONFIRM, SNG_CUSTOM_EVENT_NAME, SNG_CUSTOM_EVENT_LEVEL = range(300, 310)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -142,6 +142,7 @@ async def _show_singular_events(update: Update, context: ContextTypes.DEFAULT_TY
         for ev in events
     ]
     kb.append([InlineKeyboardButton("🎯 لفل مخصص", callback_data="sg_custom_level")])
+    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="sg_custom_event")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="singular_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
@@ -399,6 +400,139 @@ async def singular_custom_send(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+# ==================== Custom Event (اسم حدث مخصص) ====================
+
+@require_access
+async def singular_custom_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ask user for custom event name."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📝 *أدخل اسم الحدث المخصص:*\nمثال: `level_complete` أو `purchase`",
+        parse_mode="Markdown",
+    )
+    return SNG_CUSTOM_EVENT_NAME
+
+
+@require_access
+async def singular_custom_event_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Store event name and ask for level."""
+    event_name = update.message.text.strip()
+    context.user_data["sg_custom_event_name"] = event_name
+    await update.message.reply_text(
+        "📊 *أدخل رقم الفل:*\nمثال: `15` أو `20`",
+        parse_mode="Markdown",
+    )
+    return SNG_CUSTOM_EVENT_LEVEL
+
+
+@require_access
+async def singular_custom_event_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle level input and show confirmation."""
+    try:
+        level = int(update.message.text.strip())
+        if level < 1:
+            raise ValueError("Level must be positive")
+    except ValueError:
+        await update.message.reply_text(
+            "❌ *أدخل رقماً صحيحاً موجباً*",
+            parse_mode="Markdown",
+        )
+        return SNG_CUSTOM_EVENT_LEVEL
+
+    context.user_data["sg_custom_event_level"] = level
+    game = context.user_data.get("sg_game", {})
+    event_name = context.user_data.get("sg_custom_event_name", "")
+
+    kb = [
+        [InlineKeyboardButton("✅ تأكيد الإرسال", callback_data="sg_custom_event_send")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data=f"sg_game_{game.get('id')}")],
+    ]
+    await update.message.reply_text(
+        f"🎯 *تأكيد الحدث المخصص*\n\n🎮 اللعبة: {game.get('display_name', '')}\n📝 اسم الحدث: `{event_name}`\n📊 الفل: `{level}`",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return ConversationHandler.END
+
+
+@require_access
+async def singular_custom_event_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send custom event with custom name and level."""
+    query = update.callback_query
+    await query.answer()
+
+    game_id = context.user_data.get("sg_game_id")
+    if not game_id:
+        await query.edit_message_text(
+            "❌ *انتهت الجلسة. ابدأ من جديد.*",
+            parse_mode="Markdown",
+            reply_markup=_back_kb("singular_menu"),
+        )
+        return
+
+    game = context.user_data.get("sg_game", {})
+    uid = update.effective_user.id
+    event_name = context.user_data.get("sg_custom_event_name", "")
+    custom_level = context.user_data.get("sg_custom_event_level", 1)
+
+    # Check and reserve usage slot
+    from src.config import ADMIN_IDS
+    if uid not in ADMIN_IDS:
+        if not check_and_reserve_usage(uid):
+            sub = db.get_active_subscription(uid)
+            used = sub.get("daily_used", 0) if sub else 0
+            limit = sub.get("daily_limit", 0) if sub else 0
+            await query.edit_message_text(
+                f"⚠️ *تم استنفاد الحد اليومي*\n\n📊 الاستخدام: `{used}/{limit}`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📦 اشتراك", callback_data="sub_menu")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")]
+                ]),
+            )
+            return
+
+    platform = db.get_user_platform(uid)
+    proxy_row = db.get_proxy_for_user(uid)
+
+    await query.edit_message_text("🔄 *جاري الإرسال...*", parse_mode="Markdown")
+
+    status, resp = send_singular(
+        event_name=event_name,
+        aifa=context.user_data.get("sg_aifa", ""),
+        uid=context.user_data.get("sg_uid", ""),
+        package=game.get("package", ""),
+        app_key=game.get("app_key", ""),
+        level=custom_level,
+        proxy=dict(proxy_row) if proxy_row else None,
+        platform=platform,
+        idfa=context.user_data.get("sg_idfa"),
+        idfv=context.user_data.get("sg_idfv"),
+        singular_uid=context.user_data.get("sg_uid"),
+    )
+
+    result_text = _result_text(status, resp)
+
+    if status == 200:
+        confirm_usage(uid)
+        result_text += "\n\n📊 *تم احتساب العملية*"
+    else:
+        rollback_usage(uid)
+        result_text += "\n\n📊 *لم يتم احتساب العملية (فشل الإرسال)*"
+
+    kb = [
+        [InlineKeyboardButton("🎯 حدث آخر", callback_data=f"sg_game_{game.get('id')}")],
+        [InlineKeyboardButton("🔙 قائمة الألعاب", callback_data="singular_menu")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")],
+    ]
+    await query.edit_message_text(
+        f"{result_text}\n\n📝 *الحدث المخصص:* `{event_name}`\n📊 *الفل:* {custom_level}\n🎮 *اللعبة:* {game.get('display_name', '')}",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+
+
 def get_handlers():
     conv = ConversationHandler(
         entry_points=[
@@ -412,6 +546,8 @@ def get_handlers():
             SNG_UID:     [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid)],
             SNG_UID_IOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid_ios)],
             SNG_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_level_input)],
+            SNG_CUSTOM_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_event_name)],
+            SNG_CUSTOM_EVENT_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_event_level)],
         },
         fallbacks=[CallbackQueryHandler(singular_menu, pattern="^singular_menu$")],
         allow_reentry=True,
@@ -422,4 +558,6 @@ def get_handlers():
         CallbackQueryHandler(singular_custom_level, pattern="^sg_custom_level$"),
         CallbackQueryHandler(singular_custom_evt_select, pattern=r"^sg_custom_evt_\d+$"),
         CallbackQueryHandler(singular_custom_send, pattern="^sg_custom_confirm$"),
+        CallbackQueryHandler(singular_custom_event, pattern="^sg_custom_event$"),
+        CallbackQueryHandler(singular_custom_event_send, pattern="^sg_custom_event_send$"),
     ]
