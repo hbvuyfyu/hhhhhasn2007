@@ -1195,20 +1195,19 @@ async def custom_event_game_select(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ اللعبة غير موجودة", reply_markup=_back_kb("admin_custom_event"))
         return ADMIN_NAV
 
-    # Check if custom event is enabled
+    # Check if custom event is enabled (default: True — button visible unless admin disabled it)
     is_enabled = db.is_custom_event_enabled(game_type, game_id)
 
     txt = (
         f"🔧 *حدث مخصص*\n\n"
         f"🎮 اللعبة: {game['display_name']}\n"
         f"📱 المنصة: {game_type.upper()}\n"
-        f"الحالة: {'✅ مفعلة' if is_enabled else '❌ معطلة'}"
+        f"الحالة: {'✅ ظاهر للزبائن' if is_enabled else '❌ مخفي عن الزبائن'}"
     )
 
     kb = [
-        [InlineKeyboardButton("✅ تفعيل" if not is_enabled else "❌ تعطيل",
+        [InlineKeyboardButton("❌ إخفاء الزر" if is_enabled else "✅ إظهار الزر",
                               callback_data=f"custom_event_toggle_{game_type}_{game_id}")],
-        [InlineKeyboardButton("🗑️ حذف الزر", callback_data=f"custom_event_delete_{game_type}_{game_id}")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="admin_custom_event")],
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
