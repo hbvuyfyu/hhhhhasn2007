@@ -327,6 +327,7 @@ def get_handlers():
         entry_points=[
             CallbackQueryHandler(singular_menu, pattern="^singular_menu$"),
             CallbackQueryHandler(singular_game, pattern=r"^sg_game_\d+$"),
+            CallbackQueryHandler(singular_custom_event_prompt, pattern="^sg_custom_event$"),
         ],
         states={
             SNG_AIFA:    [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_aifa)],
@@ -334,7 +335,10 @@ def get_handlers():
             SNG_IDFV:    [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_idfv)],
             SNG_UID:     [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid)],
             SNG_UID_IOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid_ios)],
-            SNG_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_level_entered)],
+            SNG_CUSTOM_LEVEL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_level_entered),
+                CallbackQueryHandler(singular_custom_event_prompt, pattern="^sg_custom_event$"),
+            ],
         },
         fallbacks=[CallbackQueryHandler(singular_menu, pattern="^singular_menu$")],
         allow_reentry=True,
@@ -342,5 +346,4 @@ def get_handlers():
     return [
         conv,
         CallbackQueryHandler(singular_send, pattern=r"^sg_send_\d+$"),
-        CallbackQueryHandler(singular_custom_event_prompt, pattern="^sg_custom_event$"),
     ]
