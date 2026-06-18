@@ -301,12 +301,16 @@ def get_handlers():
         entry_points=[
             CallbackQueryHandler(adj_menu, pattern="^adj_menu$"),
             CallbackQueryHandler(adj_game, pattern=r"^adj_game_\d+$"),
+            CallbackQueryHandler(adj_custom_event_prompt, pattern="^adj_custom_event$"),
         ],
         states={
             ADJ_ADID: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_adid)],
             ADJ_IDFA: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfa)],
             ADJ_IDFV: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfv)],
-            ADJ_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_level_entered)],
+            ADJ_CUSTOM_LEVEL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_level_entered),
+                CallbackQueryHandler(adj_custom_event_prompt, pattern="^adj_custom_event$"),
+            ],
         },
         fallbacks=[CallbackQueryHandler(adj_menu, pattern="^adj_menu$")],
         allow_reentry=True,
@@ -314,5 +318,4 @@ def get_handlers():
     return [
         conv,
         CallbackQueryHandler(adj_send, pattern=r"^adj_send_\d+$"),
-        CallbackQueryHandler(adj_custom_event_prompt, pattern="^adj_custom_event$"),
     ]
