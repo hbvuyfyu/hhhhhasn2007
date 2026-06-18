@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-AF_GAID, AF_IDFA, AF_IDFV, AF_UID, AF_UID_IOS, AF_CUSTOM_LEVEL, AF_CUSTOM_CONFIRM, AF_CUSTOM_EVENT_NAME, AF_CUSTOM_EVENT_LEVEL = range(100, 110)
+AF_GAID, AF_IDFA, AF_IDFV, AF_UID, AF_UID_IOS, AF_EVENTS, AF_CUSTOM_LEVEL, AF_CUSTOM_CONFIRM, AF_CUSTOM_EVENT_NAME, AF_CUSTOM_EVENT_LEVEL = range(100, 111)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -145,14 +145,14 @@ async def _show_af_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for ev in events
     ]
     kb.append([InlineKeyboardButton("🎯 لفل مخصص", callback_data="af_custom_level")])
-    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="af_custom_event")])
+    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="af_custom_event_start")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="af_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown",
     )
-    return ConversationHandler.END
+    return AF_EVENTS
 
 
 @require_access
@@ -406,8 +406,8 @@ async def af_custom_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== Custom Event (اسم حدث مخصص) ====================
 
 @require_access
-async def af_custom_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ask user for custom event name."""
+async def af_custom_event_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ask user for custom event name - entry point."""
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
@@ -548,7 +548,13 @@ def get_handlers():
             AF_IDFV:    [MessageHandler(filters.TEXT & ~filters.COMMAND, af_idfv)],
             AF_UID:     [MessageHandler(filters.TEXT & ~filters.COMMAND, af_uid)],
             AF_UID_IOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_uid_ios)],
+            AF_EVENTS: [
+                CallbackQueryHandler(af_send, pattern=r"^af_send_\d+$"),
+                CallbackQueryHandler(af_custom_level, pattern="^af_custom_level$"),
+                CallbackQueryHandler(af_custom_event_start, pattern="^af_custom_event_start$"),
+            ],
             AF_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_custom_level_input)],
+            AF_CUSTOM_CONFIRM: [CallbackQueryHandler(af_custom_send, pattern="^af_custom_confirm$")],
             AF_CUSTOM_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_custom_event_name)],
             AF_CUSTOM_EVENT_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, af_custom_event_level)],
         },
@@ -557,10 +563,6 @@ def get_handlers():
     )
     return [
         conv,
-        CallbackQueryHandler(af_send, pattern=r"^af_send_\d+$"),
-        CallbackQueryHandler(af_custom_level, pattern="^af_custom_level$"),
         CallbackQueryHandler(af_custom_evt_select, pattern=r"^af_custom_evt_\d+$"),
-        CallbackQueryHandler(af_custom_send, pattern="^af_custom_confirm$"),
-        CallbackQueryHandler(af_custom_event, pattern="^af_custom_event$"),
         CallbackQueryHandler(af_custom_event_send, pattern="^af_custom_event_send$"),
     ]

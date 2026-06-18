@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-SNG_AIFA, SNG_IDFA, SNG_IDFV, SNG_UID, SNG_UID_IOS, SNG_CUSTOM_LEVEL, SNG_CUSTOM_CONFIRM, SNG_CUSTOM_EVENT_NAME, SNG_CUSTOM_EVENT_LEVEL = range(300, 310)
+SNG_AIFA, SNG_IDFA, SNG_IDFV, SNG_UID, SNG_UID_IOS, SNG_EVENTS, SNG_CUSTOM_LEVEL, SNG_CUSTOM_CONFIRM, SNG_CUSTOM_EVENT_NAME, SNG_CUSTOM_EVENT_LEVEL = range(300, 311)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -142,14 +142,14 @@ async def _show_singular_events(update: Update, context: ContextTypes.DEFAULT_TY
         for ev in events
     ]
     kb.append([InlineKeyboardButton("🎯 لفل مخصص", callback_data="sg_custom_level")])
-    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="sg_custom_event")])
+    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="sg_custom_event_start")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="singular_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown",
     )
-    return ConversationHandler.END
+    return SNG_EVENTS
 
 
 @require_access
@@ -403,7 +403,7 @@ async def singular_custom_send(update: Update, context: ContextTypes.DEFAULT_TYP
 # ==================== Custom Event (اسم حدث مخصص) ====================
 
 @require_access
-async def singular_custom_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def singular_custom_event_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ask user for custom event name."""
     query = update.callback_query
     await query.answer()
@@ -545,7 +545,13 @@ def get_handlers():
             SNG_IDFV:    [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_idfv)],
             SNG_UID:     [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid)],
             SNG_UID_IOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_uid_ios)],
+            SNG_EVENTS: [
+                CallbackQueryHandler(singular_send, pattern=r"^sg_send_\d+$"),
+                CallbackQueryHandler(singular_custom_level, pattern="^sg_custom_level$"),
+                CallbackQueryHandler(singular_custom_event_start, pattern="^sg_custom_event_start$"),
+            ],
             SNG_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_level_input)],
+            SNG_CUSTOM_CONFIRM: [CallbackQueryHandler(singular_custom_send, pattern="^sg_custom_confirm$")],
             SNG_CUSTOM_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_event_name)],
             SNG_CUSTOM_EVENT_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, singular_custom_event_level)],
         },
@@ -554,10 +560,6 @@ def get_handlers():
     )
     return [
         conv,
-        CallbackQueryHandler(singular_send, pattern=r"^sg_send_\d+$"),
-        CallbackQueryHandler(singular_custom_level, pattern="^sg_custom_level$"),
         CallbackQueryHandler(singular_custom_evt_select, pattern=r"^sg_custom_evt_\d+$"),
-        CallbackQueryHandler(singular_custom_send, pattern="^sg_custom_confirm$"),
-        CallbackQueryHandler(singular_custom_event, pattern="^sg_custom_event$"),
         CallbackQueryHandler(singular_custom_event_send, pattern="^sg_custom_event_send$"),
     ]

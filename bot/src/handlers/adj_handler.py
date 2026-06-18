@@ -11,7 +11,7 @@ from src.utils.navigation import nav_push, nav_clear, nav_add_back_row
 
 logger = logging.getLogger(__name__)
 
-ADJ_ADID, ADJ_IDFA, ADJ_IDFV, ADJ_CUSTOM_LEVEL, ADJ_CUSTOM_CONFIRM, ADJ_CUSTOM_EVENT_TOKEN, ADJ_CUSTOM_EVENT_LEVEL = range(200, 207)
+ADJ_ADID, ADJ_IDFA, ADJ_IDFV, ADJ_EVENTS, ADJ_CUSTOM_LEVEL, ADJ_CUSTOM_CONFIRM, ADJ_CUSTOM_EVENT_TOKEN, ADJ_CUSTOM_EVENT_LEVEL = range(200, 208)
 
 
 def _result_text(status: int, resp: str) -> str:
@@ -122,14 +122,14 @@ async def _show_adj_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for ev in events
     ]
     kb.append([InlineKeyboardButton("🎯 لفل مخصص", callback_data="adj_custom_level")])
-    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="adj_custom_event")])
+    kb.append([InlineKeyboardButton("📝 حدث مخصص", callback_data="adj_custom_event_start")])
     kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="adj_menu")])
     await update.message.reply_text(
         f"🎯 *اختر الحدث*\n🎮 {game.get('display_name', '')}",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown",
     )
-    return ConversationHandler.END
+    return ADJ_EVENTS
 
 
 @require_access
@@ -377,7 +377,7 @@ async def adj_custom_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== Custom Event (اسم حدث مخصص) ====================
 
 @require_access
-async def adj_custom_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def adj_custom_event_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ask user for custom event token."""
     query = update.callback_query
     await query.answer()
@@ -514,7 +514,13 @@ def get_handlers():
             ADJ_ADID: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_adid)],
             ADJ_IDFA: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfa)],
             ADJ_IDFV: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_idfv)],
+            ADJ_EVENTS: [
+                CallbackQueryHandler(adj_send, pattern=r"^adj_send_\d+$"),
+                CallbackQueryHandler(adj_custom_level, pattern="^adj_custom_level$"),
+                CallbackQueryHandler(adj_custom_event_start, pattern="^adj_custom_event_start$"),
+            ],
             ADJ_CUSTOM_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_level_input)],
+            ADJ_CUSTOM_CONFIRM: [CallbackQueryHandler(adj_custom_send, pattern="^adj_custom_confirm$")],
             ADJ_CUSTOM_EVENT_TOKEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_event_token)],
             ADJ_CUSTOM_EVENT_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, adj_custom_event_level)],
         },
@@ -523,10 +529,6 @@ def get_handlers():
     )
     return [
         conv,
-        CallbackQueryHandler(adj_send, pattern=r"^adj_send_\d+$"),
-        CallbackQueryHandler(adj_custom_level, pattern="^adj_custom_level$"),
         CallbackQueryHandler(adj_custom_evt_select, pattern=r"^adj_custom_evt_\d+$"),
-        CallbackQueryHandler(adj_custom_send, pattern="^adj_custom_confirm$"),
-        CallbackQueryHandler(adj_custom_event, pattern="^adj_custom_event$"),
         CallbackQueryHandler(adj_custom_event_send, pattern="^adj_custom_event_send$"),
     ]
