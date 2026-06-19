@@ -192,31 +192,70 @@ async def sub_method_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     method = query.data.replace("sub_method_", "")
-    plan = context.user_data.get("sub_plan", {})
-    setting = db.get_payment_setting(method)
+    plan = context.user_data.get("sub_plan") or {}
+
+    # If plan is missing (conversation state lost), ask user to re-select
+    if not plan:
+        try:
+            await query.edit_message_text(
+                "⚠️ *انتهت جلستك*\n\nيرجى اختيار الباقة من جديد.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📦 الاشتراك", callback_data="sub_menu"),
+                    InlineKeyboardButton("🏠 القائمة", callback_data="main_menu"),
+                ]]),
+            )
+        except Exception:
+            pass
+        return ConversationHandler.END
+
+    try:
+        setting = db.get_payment_setting(method)
+    except Exception as e:
+        logger.error(f"sub_method_cash: DB error for method={method}: {e}")
+        setting = None
 
     if not setting or not setting.get("address"):
-        await query.edit_message_text(
-            f"❌ لم يتم إعداد عنوان {method} بعد\nيرجى التواصل مع الإدارة.",
-            parse_mode="Markdown",
-            reply_markup=_back_sub(),
-        )
+        name_map = {"sham_cash": "شام كاش", "syriatel_cash": "سرياتيل كاش"}
+        friendly = name_map.get(method, method)
+        try:
+            await query.edit_message_text(
+                f"❌ *{friendly}* غير مفعّل حالياً\n\nيرجى التواصل مع الإدارة أو اختيار طريقة دفع أخرى.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"),
+                    InlineKeyboardButton("🏠 القائمة", callback_data="main_menu"),
+                ]]),
+            )
+        except Exception:
+            pass
         return ConversationHandler.END
 
     context.user_data["sub_method"] = method
     context.user_data["sub_setting"] = dict(setting)
 
     instr = setting.get("instructions") or ""
+    instr_line = f"\n\n📝 *التعليمات:*\n{instr}" if instr.strip() else ""
     text = (
         f"💳 *الدفع عبر {setting['display_name']}*\n\n"
         f"📦 الباقة: *{plan.get('name','')}*\n"
         f"💰 المبلغ: `{plan.get('price',0)}$`\n\n"
-        f"📬 *الرقم / الحساب:*\n`{setting['address']}`\n\n"
-        f"{instr}\n\n"
+        f"📬 *الرقم / الحساب:*\n`{setting['address']}`"
+        f"{instr_line}\n\n"
         f"📷 بعد الإرسال، أرسل *صورة إثبات الدفع:*"
     )
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"), InlineKeyboardButton("🏠 القائمة", callback_data="main_menu")]])
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔙 رجوع", callback_data="sub_menu"),
+        InlineKeyboardButton("🏠 القائمة", callback_data="main_menu"),
+    ]])
+    try:
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+    except Exception as e:
+        logger.error(f"sub_method_cash: edit_message_text error: {e}")
+        try:
+            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=kb)
+        except Exception:
+            pass
     return SUB_CASH_PROOF
 
 
@@ -374,27 +413,44 @@ async def sub_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def get_handlers():
     conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(sub_menu, pattern="^sub_menu$")],
+        entry_points=[
+            CallbackQueryHandler(sub_menu, pattern="^sub_menu$"),
+            # Allow entry directly from payment method buttons (e.g. after bot restart)
+            CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
+            CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
+        ],
         states={
             SUB_SELECT_METHOD: [
                 CallbackQueryHandler(sub_select_plan, pattern=r"^sub_plan_\d+$"),
                 CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
-                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_[a-z_]+$"),
+                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
             ],
             SUB_USDT_TX: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, sub_usdt_tx),
+                # Allow switching method while in USDT flow
+                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
             ],
             SUB_CASH_PROOF: [
                 MessageHandler(filters.PHOTO, sub_cash_proof),
+                # Allow switching method while in cash proof flow
+                CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
+                CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
             ],
         },
-        fallbacks=[CallbackQueryHandler(sub_menu, pattern="^sub_menu$")],
+        fallbacks=[
+            CallbackQueryHandler(sub_menu, pattern="^sub_menu$"),
+            CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
+            CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
+        ],
         allow_reentry=True,
         name="subscription_conv",
         persistent=False,
     )
     return [
         conv,
+        # Global safety net: catch method callbacks even if conversation state is lost
+        CallbackQueryHandler(sub_method_usdt, pattern="^sub_method_usdt$"),
+        CallbackQueryHandler(sub_method_cash, pattern=r"^sub_method_(sham_cash|syriatel_cash)$"),
         CallbackQueryHandler(sub_approve, pattern=r"^sub_approve_\d+$"),
         CallbackQueryHandler(sub_reject, pattern=r"^sub_reject_\d+$"),
     ]
