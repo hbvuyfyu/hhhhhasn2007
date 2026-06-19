@@ -507,7 +507,11 @@ def decrement_subscription_usage(user_id: int) -> None:
 
 
 def create_subscription(user_id: int, plan_id: int, plan_name: str,
-                        duration_days: int, daily_limit: int) -> None:
+                        duration_days: int, daily_limit: int, plan_type: str = '') -> None:
+    # Auto-resolve plan_type from plan if not provided
+    if not plan_type:
+        plan_row = get_plan_by_id(plan_id)
+        plan_type = plan_row.get('plan_type', 'standard') if plan_row else 'standard'
     execute(
         "UPDATE subscriptions SET status = 'expired' WHERE user_id = %s AND status = 'active'",
         (user_id,),
@@ -515,10 +519,10 @@ def create_subscription(user_id: int, plan_id: int, plan_name: str,
     end_date = datetime.now() + timedelta(days=duration_days)
     execute(
         """
-        INSERT INTO subscriptions (user_id, plan_id, plan_name, daily_limit, start_date, end_date)
-        VALUES (%s, %s, %s, %s, NOW(), %s)
+        INSERT INTO subscriptions (user_id, plan_id, plan_name, daily_limit, start_date, end_date, plan_type)
+        VALUES (%s, %s, %s, %s, NOW(), %s, %s)
         """,
-        (user_id, plan_id, plan_name, daily_limit, end_date),
+        (user_id, plan_id, plan_name, daily_limit, end_date, plan_type),
     )
     execute("UPDATE users SET allowed = 1 WHERE user_id = %s", (user_id,))
 
@@ -527,30 +531,30 @@ def create_subscription(user_id: int, plan_id: int, plan_name: str,
 
 def get_active_plans() -> List[Dict]:
     return execute(
-        "SELECT id, name, duration_days, price, daily_limit FROM subscription_plans WHERE is_active = TRUE ORDER BY price",
+        "SELECT id, name, duration_days, price, daily_limit, COALESCE(plan_type,'standard') AS plan_type FROM subscription_plans WHERE is_active = TRUE ORDER BY price",
         fetch="all",
     ) or []
 
 
 def get_all_plans() -> List[Dict]:
     return execute(
-        "SELECT id, name, duration_days, price, daily_limit, is_active FROM subscription_plans ORDER BY price",
+        "SELECT id, name, duration_days, price, daily_limit, is_active, COALESCE(plan_type,'standard') AS plan_type FROM subscription_plans ORDER BY price",
         fetch="all",
     ) or []
 
 
 def get_plan_by_id(plan_id: int) -> Optional[Dict]:
     return execute(
-        "SELECT id, name, duration_days, price, daily_limit, is_active FROM subscription_plans WHERE id = %s",
+        "SELECT id, name, duration_days, price, daily_limit, is_active, COALESCE(plan_type,'standard') AS plan_type FROM subscription_plans WHERE id = %s",
         (plan_id,),
         fetch="one",
     )
 
 
-def add_plan(name: str, duration_days: int, price: float, daily_limit: int) -> None:
+def add_plan(name: str, duration_days: int, price: float, daily_limit: int, plan_type: str = 'standard') -> None:
     execute(
-        "INSERT INTO subscription_plans (name, duration_days, price, daily_limit) VALUES (%s, %s, %s, %s)",
-        (name, duration_days, price, daily_limit),
+        "INSERT INTO subscription_plans (name, duration_days, price, daily_limit, plan_type) VALUES (%s, %s, %s, %s, %s)",
+        (name, duration_days, price, daily_limit, plan_type),
     )
 
 
@@ -558,15 +562,32 @@ def toggle_plan(plan_id: int, is_active: bool) -> None:
     execute("UPDATE subscription_plans SET is_active = %s WHERE id = %s", (is_active, plan_id))
 
 
+def toggle_plan_type(plan_id: int) -> str:
+    """Toggle plan_type between standard and professional. Returns new type."""
+    row = execute(
+        "SELECT COALESCE(plan_type,'standard') AS plan_type FROM subscription_plans WHERE id = %s",
+        (plan_id,), fetch="one",
+    )
+    new_type = 'professional' if (row and row.get('plan_type') == 'standard') else 'standard'
+    execute("UPDATE subscription_plans SET plan_type = %s WHERE id = %s", (new_type, plan_id))
+    return new_type
+
+
 def delete_plan(plan_id: int) -> None:
     execute("DELETE FROM subscription_plans WHERE id = %s", (plan_id,))
 
 
-def update_plan(plan_id: int, name: str, duration_days: int, price: float, daily_limit: int) -> None:
-    execute(
-        "UPDATE subscription_plans SET name=%s, duration_days=%s, price=%s, daily_limit=%s WHERE id=%s",
-        (name, duration_days, price, daily_limit, plan_id),
-    )
+def update_plan(plan_id: int, name: str, duration_days: int, price: float, daily_limit: int, plan_type: str = '') -> None:
+    if plan_type:
+        execute(
+            "UPDATE subscription_plans SET name=%s, duration_days=%s, price=%s, daily_limit=%s, plan_type=%s WHERE id=%s",
+            (name, duration_days, price, daily_limit, plan_type, plan_id),
+        )
+    else:
+        execute(
+            "UPDATE subscription_plans SET name=%s, duration_days=%s, price=%s, daily_limit=%s WHERE id=%s",
+            (name, duration_days, price, daily_limit, plan_id),
+        )
 
 
 # ==================== Payment Settings ====================
@@ -692,6 +713,33 @@ def get_all_payment_requests() -> List[Dict]:
         "SELECT * FROM payment_requests ORDER BY created_at DESC LIMIT 100",
         fetch="all",
     ) or []
+
+
+def get_completed_payment_requests() -> List[Dict]:
+    return execute(
+        """
+        SELECT * FROM payment_requests
+        WHERE status IN ('approved', 'rejected')
+        ORDER BY processed_at DESC
+        LIMIT 50
+        """,
+        fetch="all",
+    ) or []
+
+
+def has_professional_subscription(user_id: int) -> bool:
+    """Returns True if user has an active professional subscription."""
+    row = execute(
+        """
+        SELECT id FROM subscriptions
+        WHERE user_id = %s AND status = 'active' AND end_date > NOW()
+          AND COALESCE(plan_type, 'standard') = 'professional'
+        LIMIT 1
+        """,
+        (user_id,),
+        fetch="one",
+    )
+    return row is not None
 
 
 # ==================== Scheduled Groups ====================
