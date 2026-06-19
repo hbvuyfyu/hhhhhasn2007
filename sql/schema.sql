@@ -3,6 +3,11 @@
 -- Run this once against your Neon / Railway DB
 -- =====================================================
 
+-- ==================== Migration: plan_type columns ====================
+-- Add plan_type to subscription_plans and subscriptions tables if not exist
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS plan_type TEXT NOT NULL DEFAULT 'standard';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan_type TEXT NOT NULL DEFAULT 'standard';
+
 -- ==================== Core tables ====================
 
 CREATE TABLE IF NOT EXISTS users (
