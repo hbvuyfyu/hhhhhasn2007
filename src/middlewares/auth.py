@@ -84,6 +84,48 @@ def rollback_usage(user_id: int) -> None:
     db.decrement_subscription_usage(user_id)
 
 
+def require_professional_access(func):
+    """Only allow users with a professional subscription (or admins) to access this feature."""
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user = update.effective_user
+        if not user:
+            return
+
+        uid = user.id
+        db.upsert_user(uid, user.username or "", user.full_name or "")
+        db.ensure_user_platform(uid)
+
+        if uid in ADMIN_IDS:
+            db.increment_requests(uid)
+            return await func(update, context, *args, **kwargs)
+
+        cache_key = f"banned_{uid}"
+        banned = cache_get(cache_key)
+        if banned is None:
+            banned = db.is_banned(uid)
+            cache_set(cache_key, banned)
+        if banned:
+            await _reply(update, f"🚫 *أنت محظور*\n\nللتواصل مع الدعم: {SUPPORT_USER}")
+            return
+
+        if db.has_professional_subscription(uid):
+            db.increment_requests(uid)
+            return await func(update, context, *args, **kwargs)
+
+        await _reply(
+            update,
+            f"🔒 *هذه الميزة للباقات الاحترافية فقط*\n\n"
+            f"مزرعة الجمبرة متاحة فقط لأصحاب الباقات الاحترافية.\n"
+            f"يرجى الاشتراك بباقة احترافية للوصول إليها.\n\n"
+            f"للتواصل مع الدعم: {SUPPORT_USER}",
+            show_sub_button=True,
+        )
+        return
+
+    return wrapper
+
+
 def allow_free_access(func):
     """Decorator for commands that don't require subscription (like subscription menu)."""
     @wraps(func)
