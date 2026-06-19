@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 
 from src.database import queries as db
-from src.middlewares.auth import require_access, check_and_reserve_usage, confirm_usage, rollback_usage
+from src.middlewares.auth import require_access, require_professional_access, check_and_reserve_usage, confirm_usage, rollback_usage
 from src.services.appsflyer import send_af
 from src.services.adjust import send_adj
 from src.services.singular import send_singular
@@ -35,7 +35,7 @@ def _back_kb(data: str = "jumper_farm") -> InlineKeyboardMarkup:
 
 # ==================== Farm main menu ====================
 
-@require_access
+@require_professional_access
 async def jumper_farm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
