@@ -70,6 +70,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔧 حدث مخصص", callback_data="admin_custom_event")],
         [InlineKeyboardButton("💳 إعدادات الدفع", callback_data="admin_payment")],
         [InlineKeyboardButton("📦 إدارة الباقات", callback_data="admin_plans")],
+        [InlineKeyboardButton("📋 طلبات وسجلات الشحن", callback_data="admin_charge_requests")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")],
     ]
     await query.edit_message_text("👑 *لوحة تحكم المدير*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -926,24 +927,53 @@ async def plan_add_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ *أدخل رقماً صحيحاً*", parse_mode="Markdown")
         return PLAN_ADD_LIMIT
 
+    context.user_data["plan_limit"] = daily_limit
+
+    # Ask for plan type
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🟢 باقة عادية (Standard)", callback_data="plan_add_type_standard")],
+        [InlineKeyboardButton("⭐ باقة احترافية (Professional)", callback_data="plan_add_type_professional")],
+    ])
+    await update.message.reply_text(
+        "🏷 *اختر نوع الباقة:*\n\n"
+        "🟢 *عادية* — وصول للميزات الأساسية\n"
+        "⭐ *احترافية* — تتضمن مزرعة الجمبرة وجميع الميزات",
+        parse_mode="Markdown",
+        reply_markup=kb,
+    )
+    return ADMIN_NAV
+
+
+@_admin_required
+async def plan_add_type_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle plan type selection (standard/professional) during plan creation."""
+    query = update.callback_query
+    await query.answer()
+
+    plan_type = query.data.replace("plan_add_type_", "")
     name = context.user_data.get("plan_name", "")
     duration = context.user_data.get("plan_duration", 30)
     price = context.user_data.get("plan_price", 0.0)
+    daily_limit = context.user_data.get("plan_limit", 10)
+
+    type_label = "⭐ احترافية" if plan_type == "professional" else "🟢 عادية"
 
     try:
-        db.add_plan(name, duration, price, daily_limit)
-        await update.message.reply_text(
+        db.add_plan(name, duration, price, daily_limit, plan_type)
+        await query.edit_message_text(
             f"✅ *تم إضافة الباقة*\n\n"
             f"📦 الاسم: {name}\n"
             f"📅 المدة: {duration} يوم\n"
             f"💰 السعر: {price}$\n"
-            f"📊 الحد اليومي: {daily_limit} عملية",
+            f"📊 الحد اليومي: {daily_limit} عملية\n"
+            f"🏷 النوع: {type_label}",
             parse_mode="Markdown",
-            reply_markup=_back_kb("admin_plans")
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 إدارة الباقات", callback_data="admin_plans")
+            ]]),
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ *خطأ:* `{e}`", parse_mode="Markdown", reply_markup=_back_kb("admin_plans"))
-
+        await query.edit_message_text(f"❌ *خطأ:* `{e}`", parse_mode="Markdown", reply_markup=_back_kb("admin_plans"))
     return ADMIN_NAV
 
 
@@ -964,18 +994,24 @@ async def plan_edit_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(is_active, str):
         is_active = is_active.lower() == "true" or is_active == "t"
 
+    plan_type = plan.get("plan_type", "standard")
+    type_label = "⭐ احترافية" if plan_type == "professional" else "🟢 عادية"
+
     txt = (
         f"📦 *{plan['name']}*\n\n"
         f"📅 المدة: {plan['duration_days']} يوم\n"
         f"💰 السعر: {plan['price']}$\n"
         f"📊 الحد اليومي: {plan['daily_limit']} عملية\n"
+        f"🏷 النوع: {type_label}\n"
         f"الحالة: {'✅ مفعلة' if is_active else '❌ معطلة'}"
     )
+    toggle_type_label = "⭐ تحويل لاحترافية" if plan_type == "standard" else "🟢 تحويل لعادية"
     kb = [
         [InlineKeyboardButton("📝 تعديل الاسم", callback_data=f"plan_set_name_{plan_id}")],
         [InlineKeyboardButton("📅 تعديل المدة", callback_data=f"plan_set_duration_{plan_id}")],
         [InlineKeyboardButton("💰 تعديل السعر", callback_data=f"plan_set_price_{plan_id}")],
         [InlineKeyboardButton("📊 تعديل الحد اليومي", callback_data=f"plan_set_limit_{plan_id}")],
+        [InlineKeyboardButton(toggle_type_label, callback_data=f"plan_toggle_type_{plan_id}")],
         [InlineKeyboardButton("✅ تفعيل" if not is_active else "❌ تعطيل",
                               callback_data=f"plan_toggle_{plan_id}")],
         [InlineKeyboardButton("🗑️ حذف الباقة", callback_data=f"plan_delete_{plan_id}")],
@@ -1129,6 +1165,195 @@ async def plan_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plan_id = int(query.data.replace("plan_delete_", ""))
     db.delete_plan(plan_id)
     await query.edit_message_text("✅ *تم حذف الباقة*", parse_mode="Markdown", reply_markup=_back_kb("admin_plans"))
+
+
+@_admin_required
+async def plan_toggle_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle plan type between standard and professional."""
+    query = update.callback_query
+    await query.answer()
+    plan_id = int(query.data.replace("plan_toggle_type_", ""))
+    new_type = db.toggle_plan_type(plan_id)
+    label = "⭐ احترافية" if new_type == "professional" else "🟢 عادية"
+    await query.answer(f"✅ تم التحويل إلى {label}", show_alert=True)
+    context.user_data["plan_id"] = plan_id
+    await plan_edit_select(update, context)
+
+
+# ==================== Charge Requests Management ====================
+
+@_admin_required
+async def admin_charge_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show charge requests management menu."""
+    query = update.callback_query
+    await query.answer()
+    pending_count = len(db.get_pending_requests())
+    kb = [
+        [InlineKeyboardButton(f"⏳ طلبات اشتراك معلقة ({pending_count})", callback_data="admin_pending_requests")],
+        [InlineKeyboardButton("✅ طلبات مكتملة", callback_data="admin_completed_requests")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")],
+    ]
+    await query.edit_message_text(
+        "📋 *طلبات وسجلات الشحن*\n\nاختر القسم:",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown",
+    )
+    return ADMIN_NAV
+
+
+@_admin_required
+async def admin_pending_requests_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all pending payment requests with approve/reject buttons."""
+    query = update.callback_query
+    await query.answer()
+    requests = db.get_pending_requests()
+
+    if not requests:
+        await query.edit_message_text(
+            "✅ *لا توجد طلبات معلقة*\n\nجميع الطلبات تمت معالجتها.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 رجوع", callback_data="admin_charge_requests")
+            ]]),
+        )
+        return ADMIN_NAV
+
+    txt = f"⏳ *طلبات الاشتراك المعلقة* ({len(requests)})\n\n"
+    kb = []
+    for req in requests[:10]:
+        req_id = req["id"]
+        username = f"@{req['user_username']}" if req.get("user_username") else "—"
+        method_map = {"usdt": "USDT", "sham_cash": "شام كاش", "syriatel_cash": "سرياتيل كاش"}
+        method_label = method_map.get(req.get("method", ""), req.get("method", ""))
+        created = str(req.get("created_at", ""))[:16]
+        txt += (
+            f"*#{req_id}* | {req.get('user_name', '')} ({username})\n"
+            f"📦 {req.get('plan_name', '')} | 💰 {req.get('amount', 0)}$ | {method_label}\n"
+            f"🕐 {created}\n\n"
+        )
+        kb.append([
+            InlineKeyboardButton(f"✅ قبول #{req_id}", callback_data=f"admin_req_approve_{req_id}"),
+            InlineKeyboardButton(f"❌ رفض #{req_id}", callback_data=f"admin_req_reject_{req_id}"),
+        ])
+
+    if len(requests) > 10:
+        txt += f"_... و {len(requests) - 10} طلب آخر_\n"
+
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_charge_requests")])
+    await query.edit_message_text(txt[:4000], reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
+
+
+@_admin_required
+async def admin_completed_requests_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show completed (approved/rejected) payment requests."""
+    query = update.callback_query
+    await query.answer()
+    requests = db.get_completed_payment_requests()
+
+    if not requests:
+        await query.edit_message_text(
+            "📭 *لا توجد طلبات مكتملة*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 رجوع", callback_data="admin_charge_requests")
+            ]]),
+        )
+        return ADMIN_NAV
+
+    txt = f"✅ *طلبات الاشتراك المكتملة* (آخر {len(requests)})\n\n"
+    for req in requests[:20]:
+        status_icon = "✅" if req.get("status") == "approved" else "❌"
+        username = f"@{req['user_username']}" if req.get("user_username") else "—"
+        method_map = {"usdt": "USDT", "sham_cash": "شام كاش", "syriatel_cash": "سرياتيل كاش"}
+        method_label = method_map.get(req.get("method", ""), req.get("method", ""))
+        processed = str(req.get("processed_at", ""))[:16]
+        txt += (
+            f"{status_icon} *#{req['id']}* | {req.get('user_name', '')} ({username})\n"
+            f"📦 {req.get('plan_name', '')} | 💰 {req.get('amount', 0)}$ | {method_label}\n"
+            f"🕐 {processed}\n\n"
+        )
+
+    kb = [[InlineKeyboardButton("🔙 رجوع", callback_data="admin_charge_requests")]]
+    await query.edit_message_text(txt[:4000], reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return ADMIN_NAV
+
+
+@_admin_required
+async def admin_req_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Approve a pending subscription request from the admin panel."""
+    query = update.callback_query
+    await query.answer()
+    req_id = int(query.data.replace("admin_req_approve_", ""))
+    req = db.get_payment_request(req_id)
+
+    if not req:
+        await query.answer("❌ الطلب غير موجود", show_alert=True)
+        return await admin_pending_requests_list(update, context)
+
+    if req.get("status") != "pending":
+        await query.answer("⚠️ تم معالجة هذا الطلب مسبقاً", show_alert=True)
+        return await admin_pending_requests_list(update, context)
+
+    plan = db.get_plan_by_id(req["plan_id"])
+    if plan:
+        db.create_subscription(
+            user_id=req["user_id"],
+            plan_id=plan["id"],
+            plan_name=plan["name"],
+            duration_days=plan["duration_days"],
+            daily_limit=plan["daily_limit"],
+        )
+    db.process_payment_request(req_id, "approved", update.effective_user.id)
+
+    try:
+        await context.bot.send_message(
+            req["user_id"],
+            f"🎉 *تم تفعيل اشتراكك!*\n\n"
+            f"📦 الباقة: *{req['plan_name']}*\n"
+            f"📊 الحد اليومي: `{plan['daily_limit'] if plan else '?'}` عملية\n"
+            f"⏳ مدة الباقة: `{plan['duration_days'] if plan else '?'}` يوم",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
+            ]]),
+        )
+    except Exception:
+        pass
+
+    await query.answer("✅ تم قبول الطلب وتفعيل الاشتراك", show_alert=True)
+    return await admin_pending_requests_list(update, context)
+
+
+@_admin_required
+async def admin_req_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reject a pending subscription request from the admin panel."""
+    query = update.callback_query
+    await query.answer()
+    req_id = int(query.data.replace("admin_req_reject_", ""))
+    req = db.get_payment_request(req_id)
+
+    if not req:
+        await query.answer("❌ الطلب غير موجود", show_alert=True)
+        return await admin_pending_requests_list(update, context)
+
+    if req.get("status") != "pending":
+        await query.answer("⚠️ تم معالجة هذا الطلب مسبقاً", show_alert=True)
+        return await admin_pending_requests_list(update, context)
+
+    db.process_payment_request(req_id, "rejected", update.effective_user.id)
+
+    try:
+        await context.bot.send_message(
+            req["user_id"],
+            "❌ *تم رفض طلب اشتراكك*\n\nيرجى التواصل مع الإدارة للمزيد من المعلومات.",
+            parse_mode="Markdown",
+        )
+    except Exception:
+        pass
+
+    await query.answer("❌ تم رفض الطلب", show_alert=True)
+    return await admin_pending_requests_list(update, context)
 
 
 # ==================== Custom Event Management ====================
@@ -1326,10 +1551,24 @@ async def _admin_callback_router(update: Update, context: ContextTypes.DEFAULT_T
         return await plan_set_price_prompt(update, context)
     elif data.startswith("plan_set_limit_"):
         return await plan_set_limit_prompt(update, context)
+    elif data.startswith("plan_toggle_type_"):
+        return await plan_toggle_type(update, context)
     elif data.startswith("plan_toggle_"):
         return await plan_toggle(update, context)
     elif data.startswith("plan_delete_"):
         return await plan_delete(update, context)
+    elif data.startswith("plan_add_type_"):
+        return await plan_add_type_select(update, context)
+    elif data == "admin_charge_requests":
+        return await admin_charge_requests(update, context)
+    elif data == "admin_pending_requests":
+        return await admin_pending_requests_list(update, context)
+    elif data == "admin_completed_requests":
+        return await admin_completed_requests_list(update, context)
+    elif data.startswith("admin_req_approve_"):
+        return await admin_req_approve(update, context)
+    elif data.startswith("admin_req_reject_"):
+        return await admin_req_reject(update, context)
     return ConversationHandler.END
 
 
