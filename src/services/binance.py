@@ -6,7 +6,7 @@ import requests
 from typing import Tuple
 from urllib.parse import urlencode
 
-logger = logging.getLogger(name)
+logger = logging.getLogger(_name_)
 
 MEXC_API = "https://api.mexc.com"
 
